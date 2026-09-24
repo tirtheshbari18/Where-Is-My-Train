@@ -1,0 +1,105 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --rail-navy: #0B192C;
+    --rail-surface: #1E3E62;
+    --rail-amber: #F59E0B;
+    --rail-green: #10B981;
+    --rail-red: #EF4444;
+  }
+
+  body {
+    background-color: #070F1E;
+    color: #F1F5F9;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    overflow-x: hidden;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'Outfit', sans-serif;
+    letter-spacing: -0.02em;
+  }
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+::-webkit-scrollbar-track {
+  background: #0B192C;
+}
+::-webkit-scrollbar-thumb {
+  background: #1E3E62;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #F59E0B;
+}
+
+/* Glassmorphism Classes */
+.glass-panel {
+  background: rgba(15, 28, 48, 0.75);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.glass-panel-hover {
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.glass-panel-hover:hover {
+  background: rgba(23, 42, 70, 0.88);
+  border-color: rgba(245, 158, 11, 0.3);
+  transform: translateY(-2px);
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5), 0 0 15px -3px rgba(245, 158, 11, 0.15);
+}
+
+.rail-gradient-text {
+  background: linear-gradient(135deg, #FDE68A 0%, #F59E0B 50%, #D97706 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.rail-blue-gradient {
+  background: linear-gradient(135deg, #0B192C 0%, #1E3E62 100%);
+}
+
+.rail-header-glow {
+  background: radial-gradient(circle at 50% 0%, rgba(245, 158, 11, 0.15), transparent 70%);
+}
+
+/* Leaflet Container Styling */
+.leaflet-container {
+  width: 100%;
+  height: 100%;
+  border-radius: 0.75rem;
+  z-index: 10;
+  background: #0B192C !important;
+}
+
+.leaflet-popup-content-wrapper {
+  background: #0F1C30 !important;
+  color: #F8FAFC !important;
+  border: 1px solid #F59E0B !important;
+  border-radius: 8px !important;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.8) !important;
+}
+
+.leaflet-popup-tip {
+  background: #0F1C30 !important;
+}
+
+/* Railway Timeline Track Animation */
+@keyframes signalPulse {
+  0% { transform: scale(0.95); opacity: 0.8; }
+  50% { transform: scale(1.15); opacity: 1; filter: drop-shadow(0 0 8px #10B981); }
+  100% { transform: scale(0.95); opacity: 0.8; }
+}
+
+.signal-live {
+  animation: signalPulse 2s infinite ease-in-out;
+}

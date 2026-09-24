@@ -1,0 +1,213 @@
+// Prisma schema for WHERE IS MY TRAIN
+// Indian Railway Train Information and Tracking System
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String          @id @default(uuid())
+  email         String?         @unique
+  name          String?
+  role          String          @default("user") // "user" | "admin"
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  favourites    Favourite[]
+  searchHistory SearchHistory[]
+}
+
+model RailwayZone {
+  id        String    @id @default(uuid())
+  code      String    @unique // e.g. "WR", "CR", "NR", "SR", "ER", "SWR"
+  name      String    // e.g. "Western Railway"
+  headquarters String // e.g. "Mumbai (Churchgate)"
+  divisions String    // Comma-separated or JSON list of divisions
+  stations  Station[]
+  trains    Train[]
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+}
+
+model Station {
+  id              String      @id @default(uuid())
+  code            String      @unique // e.g. "BVI", "MMCT", "NDLS"
+  name            String      // e.g. "Borivali", "Mumbai Central"
+  state           String?
+  zoneCode        String?
+  division        String?
+  latitude        Float
+  longitude       Float
+  numberOfPlatforms Int       @default(2)
+  wifiAvailable   Boolean     @default(true)
+  retiringRooms   Boolean     @default(false)
+  category        String      @default("NSG-1") // Station category
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  zone            RailwayZone? @relation(fields: [zoneCode], references: [code])
+  originTrains    Train[]     @relation("SourceStation")
+  destTrains      Train[]     @relation("DestStation")
+  stops           TrainStop[]
+  favourites      Favourite[]
+
+  @@index([code])
+  @@index([name])
+}
+
+model Train {
+  id               String       @id @default(uuid())
+  trainNumber      String       @unique // e.g. "20901", "12951"
+  trainName        String       // e.g. "Vande Bharat Express", "Mumbai Rajdhani"
+  sourceCode       String       // e.g. "MMCT"
+  destinationCode  String       // e.g. "GNC"
+  trainType        String       // "Vande Bharat", "Rajdhani", "Shatabdi", "Superfast", "Express", "Duronto", "Special"
+  zoneCode         String?
+  runningDays      String       // JSON array or comma-separated: "Mon,Tue,Wed,Thu,Fri,Sat"
+  hasPantry        Boolean      @default(true)
+  distanceKm       Int          @default(0)
+  durationMinutes  Int          @default(0)
+  coaches          String?      // Coach composition JSON
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  sourceStation    Station      @relation("SourceStation", fields: [sourceCode], references: [code])
+  destStation      Station      @relation("DestStation", fields: [destinationCode], references: [code])
+  zone             RailwayZone? @relation(fields: [zoneCode], references: [code])
+  stops            TrainStop[]
+  statuses         TrainStatus[]
+  favourites       Favourite[]
+  alerts           Alert[]
+
+  @@index([trainNumber])
+  @@index([trainName])
+  @@index([sourceCode])
+  @@index([destinationCode])
+}
+
+model TrainStop {
+  id                String   @id @default(uuid())
+  trainNumber       String
+  stationCode       String
+  stopSequence      Int
+  scheduledArrival  String?  // HH:mm or "START"
+  scheduledDeparture String? // HH:mm or "END"
+  haltMinutes       Int      @default(2)
+  distanceFromSourceKm Int   @default(0)
+  dayCount          Int      @default(1)
+  platform          String?  // e.g. "1", "3A"
+
+  train             Train    @relation(fields: [trainNumber], references: [trainNumber], onDelete: Cascade)
+  station           Station  @relation(fields: [stationCode], references: [code])
+
+  @@unique([trainNumber, stopSequence])
+  @@index([trainNumber])
+  @@index([stationCode])
+}
+
+model TrainStatus {
+  id                    String   @id @default(uuid())
+  trainNumber           String
+  journeyDate           String   // YYYY-MM-DD
+  status                String   // "RUNNING", "SCHEDULED", "TERMINATED", "DELAYED", "CANCELLED", "DIVERTED"
+  lastReportedStationCode String?
+  previousStationCode   String?
+  nextStationCode       String?
+  delayMinutes          Int      @default(0)
+  expectedArrival       String?
+  expectedDeparture     String?
+  latitude              Float?
+  longitude             Float?
+  positionType          String   // "station" | "gps" | "estimated"
+  source                String   // e.g. "Mock Railway Data Provider", "Authorized NTES Adapter"
+  speedKmH              Float?
+  locoNumber            String?  // Railfan info: e.g. "WAP-7 #30456"
+  updatedAt             DateTime @default(now())
+
+  train                 Train    @relation(fields: [trainNumber], references: [trainNumber], onDelete: Cascade)
+
+  @@index([trainNumber, journeyDate])
+}
+
+model Favourite {
+  id          String   @id @default(uuid())
+  userId      String?
+  itemType    String   // "TRAIN" | "STATION"
+  trainNumber String?
+  stationCode String?
+  createdAt   DateTime @default(now())
+
+  user        User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  train       Train?   @relation(fields: [trainNumber], references: [trainNumber], onDelete: Cascade)
+  station     Station? @relation(fields: [stationCode], references: [code], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([trainNumber])
+  @@index([stationCode])
+}
+
+model SearchHistory {
+  id         String   @id @default(uuid())
+  userId     String?
+  query      String
+  searchType String   // "TRAIN" | "STATION" | "ROUTE"
+  metadata   String?  // JSON with extra info
+  createdAt  DateTime @default(now())
+
+  user       User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Alert {
+  id             String    @id @default(uuid())
+  trainNumber    String?
+  stationCode    String?
+  alertType      String    // "DELAY", "PLATFORM_CHANGE", "CANCELLATION", "RESCHEDULED", "DIVERSION", "GENERAL"
+  title          String
+  description    String
+  severity       String    @default("INFO") // "INFO", "WARNING", "CRITICAL"
+  effectiveFrom  DateTime  @default(now())
+  effectiveUntil DateTime?
+  isActive       Boolean   @default(true)
+  createdAt      DateTime  @default(now())
+
+  train          Train?    @relation(fields: [trainNumber], references: [trainNumber], onDelete: Cascade)
+
+  @@index([trainNumber])
+  @@index([stationCode])
+}
+
+model DataProvider {
+  id             String          @id @default(uuid())
+  code           String          @unique // "ntes", "licensed", "mock"
+  name           String
+  description    String?
+  isEnabled      Boolean         @default(true)
+  priority       Int             @default(1) // 1 = Primary, 2 = Fallback, etc.
+  endpointUrl    String?
+  healthRecords  ProviderHealth[]
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+}
+
+model ProviderHealth {
+  id              String       @id @default(uuid())
+  providerCode    String
+  status          String       // "HEALTHY", "DEGRADED", "DOWN"
+  responseTimeMs  Int          @default(0)
+  successCount    Int          @default(0)
+  failureCount    Int          @default(0)
+  lastSuccessAt   DateTime?
+  lastFailureAt   DateTime?
+  lastErrorMessage String?
+  checkedAt       DateTime     @default(now())
+
+  provider        DataProvider @relation(fields: [providerCode], references: [code], onDelete: Cascade)
+
+  @@index([providerCode])
+}

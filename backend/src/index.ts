@@ -1,0 +1,115 @@
+import express from 'express';
+import cors from 'cors';
+import helmet from 'helmet';
+import dotenv from 'dotenv';
+import apiRouter from './routes/index.js';
+import { errorHandler } from './middleware/errorHandler.js';
+import { apiRateLimiter } from './middleware/rateLimiter.js';
+
+dotenv.config();
+
+const app = express();
+const PORT = process.env.PORT || 5000;
+const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:5173';
+
+// Security Headers
+app.use(
+  helmet({
+    contentSecurityPolicy: false, // Allows flexible frontend development and maps
+    crossOriginEmbedderPolicy: false,
+  })
+);
+
+// CORS
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      // Allow requests with no origin (like mobile apps, curl, or server-to-server)
+      if (!origin) return callback(null, true);
+      // In development allow any localhost
+      if (
+        origin.startsWith('http://localhost') ||
+        origin.startsWith('http://127.0.0.1') ||
+        origin === CLIENT_URL
+      ) {
+        return callback(null, true);
+      }
+      return callback(null, true); // Permissive for API consumers
+    },
+    credentials: true,
+  })
+);
+
+// Body Parsing
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// Global Rate Limiting on API
+app.use('/api', apiRateLimiter);
+
+// Simple Request Logging
+app.use((req, _res, next) => {
+  const timestamp = new Date().toLocaleTimeString();
+  console.log(`[${timestamp}] ${req.method} ${req.originalUrl}`);
+  next();
+});
+
+// API Routes
+app.use('/api', apiRouter);
+
+// Root Welcome Endpoint
+app.get('/', (_req, res) => {
+  res.json({
+    name: 'WHERE IS MY TRAIN - Indian Railway Platform API',
+    tagline: 'Track. Travel. Stay Connected.',
+    status: 'ACTIVE',
+    version: '1.0.0',
+    documentation: '/api/health',
+    endpoints: [
+      '/api/trains/search?q=12951',
+      '/api/trains/:number',
+      '/api/trains/:number/schedule',
+      '/api/trains/:number/status',
+      '/api/trains/:number/route',
+      '/api/trains/:number/coaches',
+      '/api/trains-between?from=MMCT&to=ADI',
+      '/api/stations/search?q=mumbai',
+      '/api/stations/:code',
+      '/api/stations/:code/live',
+      '/api/nearby-stations?lat=19.22&lng=72.85',
+      '/api/exceptions',
+      '/api/zones',
+      '/api/alerts',
+      '/api/pnr/:pnr',
+      '/api/admin/providers',
+    ],
+  });
+});
+
+// 404 Handler
+app.use((req, res) => {
+  res.status(404).json({
+    success: false,
+    error: {
+      message: `Endpoint ${req.method} ${req.originalUrl} not found`,
+      code: 'NOT_FOUND',
+    },
+  });
+});
+
+// Global Error Handler
+app.use(errorHandler);
+
+// Start Server
+if (process.env.NODE_ENV !== 'test') {
+  app.listen(PORT, () => {
+    console.log(`====================================================`);
+    console.log(`🚂 WHERE IS MY TRAIN - BACKEND SERVER ACTIVE`);
+    console.log(`📡 URL: http://localhost:${PORT}`);
+    console.log(`🛰️ Primary Provider: ${process.env.DEFAULT_DATA_PROVIDER || 'mock'}`);
+    console.log(`🛡️ Rate Limiting: Active`);
+    console.log(`====================================================`);
+  });
+}
+
+export default app;

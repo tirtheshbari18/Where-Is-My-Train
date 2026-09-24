@@ -1,0 +1,16 @@
+{
+  "name": "Where Is My Train",
+  "short_name": "WhereIsMyTrain",
+  "description": "Original Indian Railway Live Train Status & Route Tracking Platform",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0B192C",
+  "theme_color": "#1E3E62",
+  "icons": [
+    {
+      "src": "/train-icon.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml"
+    }
+  ]
+}
