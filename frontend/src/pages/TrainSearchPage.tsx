@@ -1,37 +1,68 @@
 import React, { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Search, Train, Filter, Loader2, AlertCircle } from 'lucide-react';
+import { Search, Train, Filter, Loader2, AlertCircle, Clock, ArrowUpDown, WifiOff } from 'lucide-react';
 import { railwayApi, TrainSummary } from '../api/railwayApi.js';
 import { TrainCard } from '../components/trains/TrainCard.js';
+import { offlineStorageService } from '../services/offlineStorageService.js';
+import { useTranslation } from '../context/LanguageContext.js';
 
 const TRAIN_TYPES = [
   'ALL',
+  'Express',
+  'Passenger',
+  'Superfast',
+  'Local',
   'Vande Bharat',
   'Rajdhani',
   'Shatabdi',
-  'Superfast',
-  'Express',
   'Special',
 ];
+
+type TimeSlot = 'ALL' | 'morning' | 'afternoon' | 'evening' | 'night';
+type SortOption = 'default' | 'duration' | 'departure' | 'arrival';
 
 export const TrainSearchPage: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const initialQuery = searchParams.get('q') || '';
+  const { t } = useTranslation();
 
   const [query, setQuery] = useState(initialQuery);
   const [trains, setTrains] = useState<TrainSummary[]>([]);
   const [selectedType, setSelectedType] = useState('ALL');
+  const [selectedTimeSlot, setSelectedTimeSlot] = useState<TimeSlot>('ALL');
+  const [sortBy, setSortBy] = useState<SortOption>('default');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isOfflineResult, setIsOfflineResult] = useState(false);
 
   const fetchTrains = async (q: string) => {
     setLoading(true);
     setError(null);
+
+    // If offline, use offlineStorageService
+    if (!offlineStorageService.isOnline()) {
+      const offlineData = offlineStorageService.searchOfflineTrains(q);
+      setTrains(offlineData as any);
+      setIsOfflineResult(true);
+      setLoading(false);
+      return;
+    }
+
     try {
       const data = await railwayApi.searchTrains(q);
       setTrains(data);
+      setIsOfflineResult(false);
+      // Cache for offline search
+      data.forEach((item) => offlineStorageService.cacheTrain(item));
     } catch (err: any) {
-      setError(err.message || 'Failed to search trains');
+      // Fallback to offline search if API fails
+      const offlineData = offlineStorageService.searchOfflineTrains(q);
+      if (offlineData.length > 0) {
+        setTrains(offlineData as any);
+        setIsOfflineResult(true);
+      } else {
+        setError(err.message || 'Failed to search trains');
+      }
     } finally {
       setLoading(false);
     }
@@ -47,23 +78,59 @@ export const TrainSearchPage: React.FC = () => {
     fetchTrains(query);
   };
 
-  const filteredTrains = trains.filter((t) => {
-    if (selectedType === 'ALL') return true;
-    return t.trainType === selectedType;
-  });
+  // Filter and Sort
+  const filteredTrains = trains
+    .filter((t) => {
+      // Filter by type
+      if (selectedType !== 'ALL') {
+        const typeMatch = t.trainType.toLowerCase().includes(selectedType.toLowerCase());
+        if (!typeMatch) return false;
+      }
+
+      // Filter by departure time slot
+      if (selectedTimeSlot !== 'ALL') {
+        const [h] = (t.departureTime || '00:00').split(':').map(Number);
+        if (selectedTimeSlot === 'morning' && (h < 4 || h >= 12)) return false;
+        if (selectedTimeSlot === 'afternoon' && (h < 12 || h >= 17)) return false;
+        if (selectedTimeSlot === 'evening' && (h < 17 || h >= 21)) return false;
+        if (selectedTimeSlot === 'night' && h >= 4 && h < 21) return false;
+      }
+
+      return true;
+    })
+    .sort((a, b) => {
+      if (sortBy === 'duration') {
+        return (a.durationMinutes || 0) - (b.durationMinutes || 0);
+      }
+      if (sortBy === 'departure') {
+        return (a.departureTime || '').localeCompare(b.departureTime || '');
+      }
+      if (sortBy === 'arrival') {
+        return (a.arrivalTime || '').localeCompare(b.arrivalTime || '');
+      }
+      return 0;
+    });
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
       {/* Header */}
       <div>
         <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight flex items-center gap-2">
-          <Search className="w-7 h-7 text-amber-400" />
-          <span>Indian Railway Train Directory</span>
+          <Search className="w-7 h-7 text-blue-400" />
+          <span>{t('search.title')}</span>
         </h1>
         <p className="text-sm text-slate-400 mt-1">
-          Search by 5-digit train number, train name, origin station, or destination.
+          Search by train number (e.g. 05379, 20901, 12951), train name, or stations.
         </p>
       </div>
+
+      {/* Offline Notice if applicable */}
+      {isOfflineResult && (
+        <div className="p-3 bg-amber-950/80 border border-amber-600 rounded-xl text-xs text-amber-300 flex items-center gap-2">
+          <WifiOff className="w-4 h-4 text-amber-400 shrink-0" />
+          <span>Offline search mode: displaying previously cached Indian Railways timetables.</span>
+        </div>
+      )}
 
       {/* Search Input Box */}
       <form onSubmit={handleSearchSubmit} className="relative">
@@ -71,41 +138,88 @@ export const TrainSearchPage: React.FC = () => {
           type="text"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="e.g. 20901, 12951, Vande Bharat, Rajdhani, Mumbai Central, New Delhi..."
-          className="w-full bg-slate-900 text-white placeholder-slate-500 rounded-2xl pl-12 pr-28 py-3.5 border border-slate-700 focus:outline-none focus:border-amber-500 text-sm sm:text-base transition"
+          placeholder="e.g. 05379, Lucknow, Kasganj, 20901, Vande Bharat, Rajdhani..."
+          className="w-full bg-slate-900 text-white placeholder-slate-500 rounded-2xl pl-12 pr-28 py-3.5 border border-slate-700 focus:outline-none focus:border-blue-500 text-sm sm:text-base transition"
         />
-        <Search className="w-5 h-5 text-amber-400 absolute left-4 top-4" />
+        <Search className="w-5 h-5 text-blue-400 absolute left-4 top-4" />
         <button
           type="submit"
-          className="absolute right-2 top-2 bottom-2 px-5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs sm:text-sm transition flex items-center gap-1.5"
+          className="absolute right-2 top-2 bottom-2 px-5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs sm:text-sm transition flex items-center gap-1.5 shadow"
         >
           <span>Search</span>
         </button>
       </form>
 
-      {/* Train Type Filter Pills */}
-      <div className="flex items-center gap-2 overflow-x-auto pb-2">
-        <Filter className="w-4 h-4 text-slate-500 shrink-0 mr-1" />
-        {TRAIN_TYPES.map((type) => (
-          <button
-            key={type}
-            onClick={() => setSelectedType(type)}
-            className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition ${
-              selectedType === type
-                ? 'bg-amber-500 text-slate-950 shadow-md'
-                : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
-            }`}
-          >
-            {type}
-          </button>
-        ))}
+      {/* Filters & Sorting Control Bar */}
+      <div className="space-y-3">
+        {/* Train Type Filter Pills */}
+        <div className="flex items-center gap-2 overflow-x-auto pb-1">
+          <Filter className="w-4 h-4 text-slate-500 shrink-0 mr-1" />
+          {TRAIN_TYPES.map((type) => (
+            <button
+              key={type}
+              onClick={() => setSelectedType(type)}
+              className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition ${
+                selectedType === type
+                  ? 'bg-blue-600 text-white shadow-md'
+                  : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
+              }`}
+            >
+              {type}
+            </button>
+          ))}
+        </div>
+
+        {/* Departure Time Slots & Sort Options */}
+        <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+          {/* Time Slot Selector */}
+          <div className="flex items-center gap-1.5 overflow-x-auto text-xs">
+            <Clock className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+            <span className="text-slate-400 text-[11px] font-semibold uppercase mr-1">Dep Time:</span>
+            {[
+              { slot: 'ALL', label: 'All Hours' },
+              { slot: 'morning', label: 'Morning (04-12)' },
+              { slot: 'afternoon', label: 'Afternoon (12-17)' },
+              { slot: 'evening', label: 'Evening (17-21)' },
+              { slot: 'night', label: 'Night (21-04)' },
+            ].map(({ slot, label }) => (
+              <button
+                key={slot}
+                onClick={() => setSelectedTimeSlot(slot as TimeSlot)}
+                className={`px-2.5 py-1 rounded-lg text-[11px] font-medium transition ${
+                  selectedTimeSlot === slot
+                    ? 'bg-blue-950 text-blue-300 border border-blue-800'
+                    : 'bg-slate-900 text-slate-400 hover:text-slate-200 border border-slate-800'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {/* Sort Selector */}
+          <div className="flex items-center gap-2 text-xs">
+            <ArrowUpDown className="w-3.5 h-3.5 text-slate-500" />
+            <span className="text-slate-400 text-[11px] font-semibold uppercase">Sort:</span>
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value as SortOption)}
+              className="bg-slate-900 border border-slate-700 text-slate-200 rounded-lg px-2.5 py-1 text-xs focus:outline-none focus:border-blue-500"
+            >
+              <option value="default">Default</option>
+              <option value="duration">Fastest (Duration)</option>
+              <option value="departure">Earliest Departure</option>
+              <option value="arrival">Earliest Arrival</option>
+            </select>
+          </div>
+        </div>
       </div>
 
       {/* Loading & Error States */}
       {loading && (
-        <div className="flex items-center justify-center py-16 gap-3 text-amber-400">
+        <div className="flex items-center justify-center py-16 gap-3 text-blue-400">
           <Loader2 className="w-6 h-6 animate-spin" />
-          <span className="text-sm font-medium">Scanning Railway Directory...</span>
+          <span className="text-sm font-medium">Scanning Railway Directory & Upstream Feeds...</span>
         </div>
       )}
 
@@ -122,7 +236,8 @@ export const TrainSearchPage: React.FC = () => {
           <div className="flex items-center justify-between text-xs text-slate-400">
             <span>
               Found <strong className="text-white">{filteredTrains.length}</strong> trains
-              {selectedType !== 'ALL' && ` in ${selectedType} category`}
+              {selectedType !== 'ALL' && ` in ${selectedType}`}
+              {selectedTimeSlot !== 'ALL' && ` (${selectedTimeSlot})`}
             </span>
           </div>
 
@@ -138,19 +253,9 @@ export const TrainSearchPage: React.FC = () => {
               <h3 className="text-base font-bold text-white mb-1">
                 No trains matching your query
               </h3>
-              <p className="text-xs text-slate-400 max-w-sm mx-auto mb-4">
-                Try searching with popular numbers like <strong>20901</strong>, <strong>12951</strong>, <strong>22436</strong>, or keywords like <strong>Rajdhani</strong>.
+              <p className="text-xs text-slate-400 max-w-sm mx-auto">
+                Try searching by a 5-digit train number (e.g. 05379, 20901) or a major junction name like Lucknow, Kasganj, Delhi, or Mumbai.
               </p>
-              <button
-                onClick={() => {
-                  setQuery('');
-                  setSelectedType('ALL');
-                  fetchTrains('');
-                }}
-                className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold transition"
-              >
-                Reset Search Filters
-              </button>
             </div>
           )}
         </>

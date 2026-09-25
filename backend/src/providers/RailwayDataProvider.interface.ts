@@ -93,4 +93,61 @@ export interface IRailwayDataProvider {
    * PNR Status inquiry (only via authorized integrations)
    */
   getPnrStatus(pnr: string): Promise<PnrStatus | null>;
+
+  /**
+   * Get intermediate stations between stopping stations for a train
+   */
+  getIntermediateStations(
+    trainNumber: string,
+    fromCode?: string,
+    toCode?: string
+  ): Promise<import('../types/railway.types.js').RouteSegment[]>;
+
+  /**
+   * Get train operations (crossings, overtakings, passing)
+   */
+  getTrainOperations(
+    stationCode?: string,
+    trainNumber?: string
+  ): Promise<import('../types/railway.types.js').TrainOperation[]>;
+
+  /**
+   * Get railway track sections with speed limits and electrification
+   */
+  getRailwaySections(
+    zone?: string,
+    division?: string
+  ): Promise<import('../types/railway.types.js').RailwaySection[]>;
+
+  /**
+   * Get complete railway map network data
+   */
+  getRailwayMapData(): Promise<{
+    sections: import('../types/railway.types.js').RailwaySection[];
+    stations: StationLocation[];
+    speedLimits: Array<{ label: string; min: number; max: number; color: string; count: number }>;
+  }>;
+
+  /**
+   * Get user-edited or official platform updates
+   */
+  getPlatformUpdates(
+    trainNumber: string,
+    stationCode?: string
+  ): Promise<import('../types/railway.types.js').PlatformUpdate[]>;
+
+  /**
+   * Save a user-edited platform update
+   */
+  savePlatformUpdate(
+    update: Omit<import('../types/railway.types.js').PlatformUpdate, 'id' | 'updatedAt'>
+  ): Promise<import('../types/railway.types.js').PlatformUpdate>;
+
+  /**
+   * Get detailed 19-column IndiaRailInfo-style timetable rows
+   */
+  getDetailedTimetable(
+    trainNumber: string
+  ): Promise<import('../types/railway.types.js').DetailedTimetableRow[]>;
 }
+

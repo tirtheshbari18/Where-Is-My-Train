@@ -1,5 +1,5 @@
 // Prisma schema for WHERE IS MY TRAIN
-// Indian Railway Train Information and Tracking System
+// Indian Railway Master Train, Station, Platform & Route System
 
 generator client {
   provider = "prisma-client-js"
@@ -21,67 +21,223 @@ model User {
   searchHistory SearchHistory[]
 }
 
+// 1. INDIAN RAILWAY ZONES MASTER (All 18 Zones)
 model RailwayZone {
-  id        String    @id @default(uuid())
-  code      String    @unique // e.g. "WR", "CR", "NR", "SR", "ER", "SWR"
-  name      String    // e.g. "Western Railway"
-  headquarters String // e.g. "Mumbai (Churchgate)"
-  divisions String    // Comma-separated or JSON list of divisions
-  stations  Station[]
-  trains    Train[]
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  id           String            @id @default(uuid())
+  code         String            @unique // e.g. "WR", "CR", "NR", "SR", "ER", "SWR", "NCR", "KRCL"
+  name         String            // e.g. "Western Railway"
+  headquarters String            // e.g. "Mumbai (Churchgate)"
+  divisions    String            // JSON or comma-separated list
+  active       Boolean           @default(true)
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+
+  divisionList RailwayDivision[]
+  stations     Station[]
+  trains       Train[]
+  lines        RailwayLine[]
 }
 
-model Station {
-  id              String      @id @default(uuid())
-  code            String      @unique // e.g. "BVI", "MMCT", "NDLS"
-  name            String      // e.g. "Borivali", "Mumbai Central"
-  state           String?
-  zoneCode        String?
-  division        String?
-  latitude        Float
-  longitude       Float
-  numberOfPlatforms Int       @default(2)
-  wifiAvailable   Boolean     @default(true)
-  retiringRooms   Boolean     @default(false)
-  category        String      @default("NSG-1") // Station category
-  createdAt       DateTime    @default(now())
-  updatedAt       DateTime    @updatedAt
+// 2. RAILWAY DIVISIONS MASTER (All 70 Divisions)
+model RailwayDivision {
+  id           String      @id @default(uuid())
+  code         String      @unique // e.g. "BCT", "ADI", "BSL", "PUNE"
+  name         String      // e.g. "Mumbai Central", "Ahmedabad", "Bhusaval"
+  zoneCode     String
+  headquarters String
+  active       Boolean     @default(true)
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
 
-  zone            RailwayZone? @relation(fields: [zoneCode], references: [code])
-  originTrains    Train[]     @relation("SourceStation")
-  destTrains      Train[]     @relation("DestStation")
-  stops           TrainStop[]
-  favourites      Favourite[]
+  zone         RailwayZone @relation(fields: [zoneCode], references: [code])
+  stations     Station[]
+}
+
+// 3. MASTER STATION TABLE
+model Station {
+  id                String            @id @default(uuid())
+  code              String            @unique // e.g. "DRD", "BOR", "PLG", "MMCT", "NDLS"
+  name              String            // e.g. "Dahanu Road", "Boisar", "Palghar"
+  officialName      String?
+  shortName         String?
+  zoneCode          String?
+  divisionCode      String?
+  state             String?
+  district          String?
+  city              String?
+  latitude          Float
+  longitude         Float
+  stationCategory   String            @default("NSG-1") // "NSG-1", "NSG-2", "SG-1", etc.
+  numberOfPlatforms Int               @default(2)
+  isJunction        Boolean           @default(false)
+  isTerminal        Boolean           @default(false)
+  isInterchange     Boolean           @default(false)
+  wifiAvailable     Boolean           @default(true)
+  retiringRooms     Boolean           @default(false)
+  active            Boolean           @default(true)
+  source            String            @default("OFFICIAL") // OFFICIAL, ZONE_DATA, RAILWAY_DOCUMENT
+  sourceType        String            @default("OFFICIAL")
+  lastVerifiedAt    DateTime          @default(now())
+  confidence        String            @default("HIGH") // HIGH, MEDIUM, COMMUNITY
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  zone              RailwayZone?      @relation(fields: [zoneCode], references: [code])
+  divisionRef       RailwayDivision?  @relation(fields: [divisionCode], references: [code])
+  aliases           StationAlias[]
+  platforms         StationPlatform[]
+  originTrains      Train[]           @relation("SourceStation")
+  destTrains        Train[]           @relation("DestStation")
+  stops             TrainStop[]
+  favourites        Favourite[]
 
   @@index([code])
   @@index([name])
 }
 
-model Train {
-  id               String       @id @default(uuid())
-  trainNumber      String       @unique // e.g. "20901", "12951"
-  trainName        String       // e.g. "Vande Bharat Express", "Mumbai Rajdhani"
-  sourceCode       String       // e.g. "MMCT"
-  destinationCode  String       // e.g. "GNC"
-  trainType        String       // "Vande Bharat", "Rajdhani", "Shatabdi", "Superfast", "Express", "Duronto", "Special"
-  zoneCode         String?
-  runningDays      String       // JSON array or comma-separated: "Mon,Tue,Wed,Thu,Fri,Sat"
-  hasPantry        Boolean      @default(true)
-  distanceKm       Int          @default(0)
-  durationMinutes  Int          @default(0)
-  coaches          String?      // Coach composition JSON
-  createdAt        DateTime     @default(now())
-  updatedAt        DateTime     @updatedAt
+// 15. DUPLICATE STATION HANDLING & ALIASES
+model StationAlias {
+  id              String   @id @default(uuid())
+  stationCode     String
+  alias           String   // e.g. "Dahanu Rd", "DahanuRoad", "CSTM"
+  language        String   @default("en") // "en", "hi", "mr", "gu"
+  normalizedAlias String   // e.g. "dahanuroad", "cstm"
+  createdAt       DateTime @default(now())
 
-  sourceStation    Station      @relation("SourceStation", fields: [sourceCode], references: [code])
-  destStation      Station      @relation("DestStation", fields: [destinationCode], references: [code])
-  zone             RailwayZone? @relation(fields: [zoneCode], references: [code])
-  stops            TrainStop[]
-  statuses         TrainStatus[]
-  favourites       Favourite[]
-  alerts           Alert[]
+  station         Station  @relation(fields: [stationCode], references: [code])
+
+  @@index([alias])
+  @@index([normalizedAlias])
+  @@index([stationCode])
+}
+
+// 5. PLATFORMS MASTER TABLE
+model StationPlatform {
+  id                 String         @id @default(uuid())
+  stationCode        String
+  platformNumber     String         // "1", "2", "3", "1A", "2A"
+  platformName       String?
+  platformType       String         @default("ISLAND") // "ISLAND", "SIDE", "PASSENGER"
+  isActive           Boolean        @default(true)
+  lastVerifiedAt     DateTime       @default(now())
+  source             String         @default("OFFICIAL")
+  verificationStatus String         @default("VERIFIED") // "VERIFIED", "UNVERIFIED", "COMMUNITY_APPROVED"
+
+  station            Station        @relation(fields: [stationCode], references: [code])
+  votes              PlatformVote[]
+
+  @@unique([stationCode, platformNumber])
+  @@index([stationCode])
+}
+
+// 6. COMMUNITY PLATFORM VOTES
+model PlatformVote {
+  id             String           @id @default(uuid())
+  trainNumber    String
+  stationCode    String
+  platformNumber String
+  vote           String           // "YES", "NO", "NOT_SURE"
+  source         String           @default("COMMUNITY")
+  ipHash         String?
+  createdAt      DateTime         @default(now())
+
+  platform       StationPlatform? @relation(fields: [stationCode, platformNumber], references: [stationCode, platformNumber])
+
+  @@index([trainNumber, stationCode])
+}
+
+// 7. ROUTE / RAILWAY LINE DATABASE
+model RailwayLine {
+  id              String         @id @default(uuid())
+  lineCode        String         @unique // e.g. "WR_MUM_AHM", "CR_MUM_BSL"
+  lineName        String         // e.g. "Mumbai Central - Ahmedabad Mainline"
+  zoneCode        String
+  gauge           String         @default("BROAD_GAUGE") // BROAD_GAUGE, STANDARD_GAUGE
+  electrification String         @default("AC_25KV_50HZ")
+  active          Boolean        @default(true)
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  zone            RailwayZone    @relation(fields: [zoneCode], references: [code])
+  sections        RouteSection[]
+}
+
+// 8. ROUTE SECTIONS (Sequential sections between adjacent stations)
+model RouteSection {
+  id              String      @id @default(uuid())
+  lineCode        String
+  fromStationCode String
+  toStationCode   String
+  distanceKm      Float
+  sequenceOrder   Int
+  direction       String      @default("BOTH") // "BOTH", "UP", "DOWN"
+  trackCount      Int         @default(2)
+  electrification String      @default("AC_25KV_50HZ")
+  active          Boolean     @default(true)
+
+  line            RailwayLine @relation(fields: [lineCode], references: [lineCode])
+
+  @@index([lineCode])
+  @@index([fromStationCode, toStationCode])
+}
+
+// 9. RAILWAY ROUTES MASTER
+model RailwayRoute {
+  id                String         @id @default(uuid())
+  routeCode         String         @unique // e.g. "MMCT_ADI_CORRIDOR", "CSTM_PUNE_CORRIDOR"
+  routeName         String         // e.g. "Mumbai Central - Ahmedabad Corridor"
+  originStationCode String
+  destStationCode   String
+  totalDistanceKm   Float
+  direction         String         @default("DOWN") // "DOWN" or "UP"
+  active            Boolean        @default(true)
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  routeStations     RouteStation[]
+}
+
+// 9. CUMULATIVE KM ALONG ROUTE
+model RouteStation {
+  id                     String       @id @default(uuid())
+  routeCode              String
+  stationCode            String
+  sequenceOrder          Int
+  kmFromOrigin           Float
+  distanceFromPreviousKm Float        @default(0)
+  distanceToNextKm       Float        @default(0)
+
+  route                  RailwayRoute @relation(fields: [routeCode], references: [routeCode])
+
+  @@unique([routeCode, sequenceOrder])
+  @@index([routeCode])
+  @@index([stationCode])
+}
+
+// TRAINS MASTER
+model Train {
+  id              String        @id @default(uuid())
+  trainNumber     String        @unique // e.g. "20901", "12951", "19417", "22956"
+  trainName       String        // e.g. "Vande Bharat Express", "Kutch SF Express"
+  sourceCode      String        // e.g. "MMCT", "BHUJ"
+  destinationCode String        // e.g. "GNC", "BDTS"
+  trainType       String        // "Vande Bharat", "Rajdhani", "Superfast", "Express", "Fast Local"
+  zoneCode        String?
+  runningDays     String        // "Mon,Tue,Wed,Thu,Fri,Sat,Sun"
+  hasPantry       Boolean       @default(true)
+  distanceKm      Int           @default(0)
+  durationMinutes Int           @default(0)
+  coaches         String?       // Coach composition JSON
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  sourceStation   Station       @relation("SourceStation", fields: [sourceCode], references: [code])
+  destStation     Station       @relation("DestStation", fields: [destinationCode], references: [code])
+  zone            RailwayZone?  @relation(fields: [zoneCode], references: [code])
+  stops           TrainStop[]
+  statuses        TrainStatus[]
+  favourites      Favourite[]
+  alerts          Alert[]
 
   @@index([trainNumber])
   @@index([trainName])
@@ -90,19 +246,19 @@ model Train {
 }
 
 model TrainStop {
-  id                String   @id @default(uuid())
-  trainNumber       String
-  stationCode       String
-  stopSequence      Int
-  scheduledArrival  String?  // HH:mm or "START"
-  scheduledDeparture String? // HH:mm or "END"
-  haltMinutes       Int      @default(2)
-  distanceFromSourceKm Int   @default(0)
-  dayCount          Int      @default(1)
-  platform          String?  // e.g. "1", "3A"
+  id                   String   @id @default(uuid())
+  trainNumber          String
+  stationCode          String
+  stopSequence         Int
+  scheduledArrival     String?  // HH:mm or "START"
+  scheduledDeparture   String?  // HH:mm or "END"
+  haltMinutes          Int      @default(2)
+  distanceFromSourceKm Int      @default(0)
+  dayCount             Int      @default(1)
+  platform             String?  // e.g. "1", "2", "3A"
 
-  train             Train    @relation(fields: [trainNumber], references: [trainNumber], onDelete: Cascade)
-  station           Station  @relation(fields: [stationCode], references: [code])
+  train                Train    @relation(fields: [trainNumber], references: [trainNumber], onDelete: Cascade)
+  station              Station  @relation(fields: [stationCode], references: [code])
 
   @@unique([trainNumber, stopSequence])
   @@index([trainNumber])
@@ -110,25 +266,25 @@ model TrainStop {
 }
 
 model TrainStatus {
-  id                    String   @id @default(uuid())
-  trainNumber           String
-  journeyDate           String   // YYYY-MM-DD
-  status                String   // "RUNNING", "SCHEDULED", "TERMINATED", "DELAYED", "CANCELLED", "DIVERTED"
+  id                      String   @id @default(uuid())
+  trainNumber             String
+  journeyDate             String   // YYYY-MM-DD
+  status                  String   // "RUNNING", "SCHEDULED", "TERMINATED", "DELAYED", "CANCELLED", "DIVERTED"
   lastReportedStationCode String?
-  previousStationCode   String?
-  nextStationCode       String?
-  delayMinutes          Int      @default(0)
-  expectedArrival       String?
-  expectedDeparture     String?
-  latitude              Float?
-  longitude             Float?
-  positionType          String   // "station" | "gps" | "estimated"
-  source                String   // e.g. "Mock Railway Data Provider", "Authorized NTES Adapter"
-  speedKmH              Float?
-  locoNumber            String?  // Railfan info: e.g. "WAP-7 #30456"
-  updatedAt             DateTime @default(now())
+  previousStationCode     String?
+  nextStationCode         String?
+  delayMinutes            Int      @default(0)
+  expectedArrival         String?
+  expectedDeparture       String?
+  latitude                Float?
+  longitude               Float?
+  positionType            String   // "station" | "gps" | "estimated"
+  source                  String   // e.g. "Mock Railway Data Provider", "Authorized NTES Adapter"
+  speedKmH                Float?
+  locoNumber              String?  // Railfan info: e.g. "WAP-7 #30456"
+  updatedAt               DateTime @default(now())
 
-  train                 Train    @relation(fields: [trainNumber], references: [trainNumber], onDelete: Cascade)
+  train                   Train    @relation(fields: [trainNumber], references: [trainNumber], onDelete: Cascade)
 
   @@index([trainNumber, journeyDate])
 }
@@ -155,7 +311,7 @@ model SearchHistory {
   userId     String?
   query      String
   searchType String   // "TRAIN" | "STATION" | "ROUTE"
-  metadata   String?  // JSON with extra info
+  metadata   String?
   createdAt  DateTime @default(now())
 
   user       User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -170,7 +326,7 @@ model Alert {
   alertType      String    // "DELAY", "PLATFORM_CHANGE", "CANCELLATION", "RESCHEDULED", "DIVERSION", "GENERAL"
   title          String
   description    String
-  severity       String    @default("INFO") // "INFO", "WARNING", "CRITICAL"
+  severity       String    @default("INFO")
   effectiveFrom  DateTime  @default(now())
   effectiveUntil DateTime?
   isActive       Boolean   @default(true)
@@ -183,31 +339,73 @@ model Alert {
 }
 
 model DataProvider {
-  id             String          @id @default(uuid())
-  code           String          @unique // "ntes", "licensed", "mock"
-  name           String
-  description    String?
-  isEnabled      Boolean         @default(true)
-  priority       Int             @default(1) // 1 = Primary, 2 = Fallback, etc.
-  endpointUrl    String?
-  healthRecords  ProviderHealth[]
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
+  id            String           @id @default(uuid())
+  code          String           @unique
+  name          String
+  description   String?
+  isEnabled     Boolean          @default(true)
+  priority      Int              @default(1)
+  endpointUrl   String?
+  healthRecords ProviderHealth[]
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
 }
 
 model ProviderHealth {
-  id              String       @id @default(uuid())
-  providerCode    String
-  status          String       // "HEALTHY", "DEGRADED", "DOWN"
-  responseTimeMs  Int          @default(0)
-  successCount    Int          @default(0)
-  failureCount    Int          @default(0)
-  lastSuccessAt   DateTime?
-  lastFailureAt   DateTime?
+  id               String       @id @default(uuid())
+  providerCode     String
+  status           String
+  responseTimeMs   Int          @default(0)
+  successCount     Int          @default(0)
+  failureCount     Int          @default(0)
+  lastSuccessAt    DateTime?
+  lastFailureAt    DateTime?
   lastErrorMessage String?
-  checkedAt       DateTime     @default(now())
+  checkedAt        DateTime     @default(now())
 
-  provider        DataProvider @relation(fields: [providerCode], references: [code], onDelete: Cascade)
+  provider         DataProvider @relation(fields: [providerCode], references: [code], onDelete: Cascade)
 
   @@index([providerCode])
+}
+
+// 24. METRO SEPARATION (Strictly separated from Indian Railways Mainline/Suburban)
+model MetroLine {
+  id        String         @id @default(uuid())
+  city      String         // "Mumbai", "Delhi", "Bengaluru", "Kolkata"
+  lineName  String         // "Line 1 (Blue Line)", "Line 2A (Yellow Line)"
+  colorCode String         // "#0055A5"
+  stations  MetroStation[]
+}
+
+model MetroStation {
+  id          String    @id @default(uuid())
+  lineId      String
+  stationName String
+  latitude    Float
+  longitude   Float
+  sequence    Int
+
+  line        MetroLine @relation(fields: [lineId], references: [id])
+}
+
+// 25. BUS DATA SEPARATION (Strictly separated from Indian Railways Mainline/Suburban)
+model BusRoute {
+  id          String    @id @default(uuid())
+  city        String    // "Mumbai (BEST)", "Delhi (DTC)"
+  routeNumber String    // "202", "AS-4", "C-40"
+  operator    String    // "BEST", "DTC", "BMTC", "MSRTC"
+  origin      String
+  destination String
+  stops       BusStop[]
+}
+
+model BusStop {
+  id        String   @id @default(uuid())
+  routeId   String
+  stopName  String
+  sequence  Int
+  latitude  Float?
+  longitude Float?
+
+  route     BusRoute @relation(fields: [routeId], references: [id])
 }

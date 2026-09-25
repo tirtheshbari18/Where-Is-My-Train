@@ -105,4 +105,53 @@ export class LicensedRailwayProvider implements IRailwayDataProvider {
   async getPnrStatus(_pnr: string): Promise<PnrStatus | null> {
     throw new Error('Licensed provider requires active API key');
   }
+
+  async getIntermediateStations(
+    _trainNumber: string,
+    _fromCode?: string,
+    _toCode?: string
+  ): Promise<import('../../types/railway.types.js').RouteSegment[]> {
+    throw new Error('Licensed provider requires active API key');
+  }
+
+  async getTrainOperations(
+    _stationCode?: string,
+    _trainNumber?: string
+  ): Promise<import('../../types/railway.types.js').TrainOperation[]> {
+    throw new Error('Licensed provider requires active API key');
+  }
+
+  async getRailwaySections(
+    _zone?: string,
+    _division?: string
+  ): Promise<import('../../types/railway.types.js').RailwaySection[]> {
+    throw new Error('Licensed provider requires active API key');
+  }
+
+  async getRailwayMapData(): Promise<{
+    sections: import('../../types/railway.types.js').RailwaySection[];
+    stations: StationLocation[];
+    speedLimits: Array<{ label: string; min: number; max: number; color: string; count: number }>;
+  }> {
+    throw new Error('Licensed provider requires active API key');
+  }
+
+  async getPlatformUpdates(
+    _trainNumber: string,
+    _stationCode?: string
+  ): Promise<import('../../types/railway.types.js').PlatformUpdate[]> {
+    throw new Error('Licensed provider requires active API key');
+  }
+
+  async savePlatformUpdate(
+    _update: Omit<import('../../types/railway.types.js').PlatformUpdate, 'id' | 'updatedAt'>
+  ): Promise<import('../../types/railway.types.js').PlatformUpdate> {
+    throw new Error('Licensed provider requires active API key');
+  }
+
+  async getDetailedTimetable(
+    _trainNumber: string
+  ): Promise<import('../../types/railway.types.js').DetailedTimetableRow[]> {
+    throw new Error('Licensed provider requires active API key');
+  }
 }

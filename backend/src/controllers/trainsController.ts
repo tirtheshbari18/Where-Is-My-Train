@@ -4,6 +4,12 @@ import { railwayService } from '../services/railwayService.js';
 export class TrainsController {
   static async search(req: Request, res: Response, next: NextFunction) {
     try {
+      const from = (req.query.from as string || '').toUpperCase().trim();
+      const to = (req.query.to as string || '').toUpperCase().trim();
+      if (from && to) {
+        return TrainsController.getBetweenStations(req, res, next);
+      }
+
       const query = (req.query.q as string) || '';
       const result = await railwayService.searchTrains(query);
       res.json({
@@ -193,6 +199,137 @@ export class TrainsController {
         from,
         to,
         date: date || new Date().toISOString().split('T')[0],
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  static async getIntermediateStations(req: Request, res: Response, next: NextFunction) {
+    try {
+      const number = req.params.number as string;
+      const from = req.query.from as string | undefined;
+      const to = req.query.to as string | undefined;
+
+      const segments = await railwayService.getIntermediateStations(number, from, to);
+      res.json({
+        success: true,
+        data: segments,
+        trainNumber: number,
+        from,
+        to,
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  static async getTrainOperations(req: Request, res: Response, next: NextFunction) {
+    try {
+      const number = req.params.number as string | undefined;
+      const station = (req.query.station as string) || undefined;
+
+      const operations = await railwayService.getTrainOperations(station, number);
+      res.json({
+        success: true,
+        data: operations,
+        trainNumber: number,
+        stationCode: station,
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  static async getPlatformUpdates(req: Request, res: Response, next: NextFunction) {
+    try {
+      const number = req.params.number as string;
+      const station = req.query.station as string | undefined;
+
+      const updates = await railwayService.getPlatformUpdates(number, station);
+      res.json({
+        success: true,
+        data: updates,
+        trainNumber: number,
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  static async savePlatformUpdate(req: Request, res: Response, next: NextFunction) {
+    try {
+      const number = req.params.number as string;
+      const { stationCode, stationName, oldPlatform, newPlatform, source } = req.body;
+
+      if (!stationCode || !newPlatform) {
+        return res.status(400).json({
+          success: false,
+          error: {
+            message: 'Station code and new platform number are required.',
+            code: 'INVALID_PLATFORM_DATA',
+          },
+        });
+      }
+
+      const saved = await railwayService.savePlatformUpdate({
+        trainNumber: number,
+        stationCode,
+        stationName: stationName || stationCode,
+        oldPlatform: oldPlatform || '1',
+        newPlatform,
+        source: source || 'User Announcement',
+        isOfficial: false,
+      });
+
+      res.json({
+        success: true,
+        data: saved,
+        message: `Platform updated successfully to Platform ${newPlatform}`,
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  static async getDetailedTimetable(req: Request, res: Response, next: NextFunction) {
+    try {
+      const number = req.params.number as string;
+      const rows = await railwayService.getDetailedTimetable(number);
+
+      res.json({
+        success: true,
+        data: rows,
+        trainNumber: number,
+        total: rows.length,
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  static async getSections(req: Request, res: Response, next: NextFunction) {
+    try {
+      const zone = req.query.zone as string | undefined;
+      const division = req.query.division as string | undefined;
+
+      const sections = await railwayService.getRailwaySections(zone, division);
+      res.json({
+        success: true,
+        data: sections,
+        total: sections.length,
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  static async getMapData(_req: Request, res: Response, next: NextFunction) {
+    try {
+      const mapData = await railwayService.getRailwayMapData();
+      res.json({
+        success: true,
+        data: mapData,
       });
     } catch (err) {
       next(err);

@@ -1,160 +1,180 @@
+// frontend/src/components/common/Header.tsx
 import React, { useState } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Train,
-  Radio,
-  Search,
-  MapPin,
-  Calendar,
-  Heart,
-  Bell,
-  Ticket,
-  Shield,
   Menu,
-  X,
-  Compass,
+  Mic,
+  Moon,
+  Sun,
+  MapPin,
+  Bus,
+  ChevronDown,
 } from 'lucide-react';
+import { useTheme } from '../../context/ThemeContext.js';
+import { SideDrawer } from './SideDrawer.js';
+import { VoiceSearchModal } from './VoiceSearchModal.js';
+import { LanguageSelector } from './LanguageSelector.js';
 
 export const Header: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [quickSearch, setQuickSearch] = useState('');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const { theme, toggleTheme } = useTheme();
 
-  const handleQuickSearch = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (quickSearch.trim()) {
-      navigate(`/search?q=${encodeURIComponent(quickSearch.trim())}`);
-      setQuickSearch('');
-      setMobileMenuOpen(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [voiceOpen, setVoiceOpen] = useState(false);
+  const [currentCity, setCurrentCity] = useState(() => {
+    return localStorage.getItem('wimt_selected_city') || 'Mumbai';
+  });
+
+  const activeMode = searchParams.get('mode') || 'express';
+
+  const handleModeChange = (mode: string) => {
+    if (location.pathname === '/') {
+      setSearchParams({ mode });
+    } else {
+      navigate(`/?mode=${mode}`);
     }
   };
 
-  const navLinks = [
-    { name: 'Home', path: '/', icon: Train },
-    { name: 'Live Trains', path: '/live', icon: Radio },
-    { name: 'Train Search', path: '/search', icon: Search },
-    { name: 'Stations', path: '/live-station', icon: MapPin },
-    { name: 'Trains Between', path: '/trains-between', icon: Calendar },
-    { name: 'PNR', path: '/pnr', icon: Ticket },
-    { name: 'Alerts', path: '/alerts', icon: Bell },
-    { name: 'Favourites', path: '/favourites', icon: Heart },
-    { name: 'Railfan', path: '/train/20901?tab=railfan', icon: Compass },
-    { name: 'Admin', path: '/admin', icon: Shield },
+  const handleCityChange = (city: string) => {
+    setCurrentCity(city);
+    localStorage.setItem('wimt_selected_city', city);
+  };
+
+  const modes = [
+    { id: 'express', label: 'EXPRESS', icon: Train },
+    { id: 'locals', label: 'LOCALS', icon: Train },
+    { id: 'metro', label: 'METRO', icon: Train },
+    { id: 'bus', label: 'BUS', icon: Bus },
   ];
 
   return (
-    <header className="sticky top-0 z-50 glass-panel border-b border-slate-800 bg-slate-950/80 backdrop-blur-md">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-16">
-          {/* Logo & Brand */}
-          <Link to="/" className="flex items-center gap-3 group">
-            <div className="relative w-10 h-10 rounded-xl bg-gradient-to-br from-amber-500 to-amber-600 flex items-center justify-center shadow-lg shadow-amber-500/20 group-hover:scale-105 transition-transform">
-              <Train className="w-6 h-6 text-slate-950" />
-              <span className="absolute -top-1 -right-1 w-3 h-3 bg-emerald-500 rounded-full border-2 border-slate-950 animate-pulse"></span>
+    <>
+      <header className="sticky top-0 z-40 bg-[#0A58CA] dark:bg-slate-900 text-white shadow-md transition-colors duration-200">
+        {/* Main Top Bar */}
+        <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
+          <div className="flex items-center justify-between h-14 sm:h-16">
+            {/* Left: Hamburger & Brand */}
+            <div className="flex items-center gap-2.5">
+              <button
+                onClick={() => setDrawerOpen(true)}
+                className="p-2 -ml-1 text-white hover:bg-white/10 rounded-xl transition active:scale-95"
+                aria-label="Open navigation drawer"
+              >
+                <Menu className="w-6 h-6" />
+              </button>
+
+              <Link to="/" className="flex items-center gap-2 group">
+                <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-white text-[#0A58CA] flex items-center justify-center shadow-md font-black">
+                  <Train className="w-5 h-5 fill-current" />
+                </div>
+                <div>
+                  <div className="font-black text-base sm:text-lg tracking-tight leading-none text-white">
+                    WHERE IS MY TRAIN
+                  </div>
+                  <div className="text-[10px] text-blue-100 dark:text-blue-300 font-semibold tracking-wider uppercase mt-0.5">
+                    Live Indian Railways & Transit
+                  </div>
+                </div>
+              </Link>
             </div>
-            <div>
-              <div className="font-extrabold text-lg sm:text-xl tracking-tight text-white flex items-center gap-1.5">
-                <span>WHERE IS MY TRAIN</span>
+
+            {/* Right: Actions (Voice, City, Theme, Language) */}
+            <div className="flex items-center gap-1.5 sm:gap-2">
+              {/* City Pill */}
+              <button
+                onClick={() => setDrawerOpen(true)}
+                className="hidden sm:flex items-center gap-1 px-2.5 py-1 rounded-full bg-blue-700/60 dark:bg-slate-800 text-blue-100 hover:text-white text-xs font-semibold border border-blue-400/30 dark:border-slate-700 transition"
+              >
+                <MapPin className="w-3.5 h-3.5 text-amber-300" />
+                <span>{currentCity}</span>
+                <ChevronDown className="w-3 h-3 opacity-70" />
+              </button>
+
+              {/* Voice Search Button */}
+              <button
+                onClick={() => setVoiceOpen(true)}
+                className="p-2 text-white hover:bg-white/10 rounded-xl transition active:scale-95"
+                title="Voice Search"
+                aria-label="Voice search"
+              >
+                <Mic className="w-5 h-5 text-amber-300 animate-pulse" />
+              </button>
+
+              {/* Theme Toggle */}
+              <button
+                onClick={toggleTheme}
+                className="p-2 text-white hover:bg-white/10 rounded-xl transition active:scale-95"
+                title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+                aria-label="Toggle theme"
+              >
+                {theme === 'dark' ? (
+                  <Sun className="w-5 h-5 text-amber-300" />
+                ) : (
+                  <Moon className="w-5 h-5 text-blue-100" />
+                )}
+              </button>
+
+              {/* Language Selector */}
+              <div className="hidden md:block">
+                <LanguageSelector />
               </div>
-              <p className="text-[10px] text-amber-400 font-medium tracking-wider uppercase -mt-0.5">
-                Track. Travel. Stay Connected.
-              </p>
             </div>
-          </Link>
-
-          {/* Desktop Search */}
-          <div className="hidden md:flex items-center flex-1 max-w-xs mx-6">
-            <form onSubmit={handleQuickSearch} className="w-full relative">
-              <input
-                type="text"
-                value={quickSearch}
-                onChange={(e) => setQuickSearch(e.target.value)}
-                placeholder="Train # (e.g. 20901, 12951)..."
-                className="w-full bg-slate-900/90 text-sm text-slate-200 placeholder-slate-500 rounded-xl pl-9 pr-4 py-1.5 border border-slate-700/80 focus:outline-none focus:border-amber-500/80 transition"
-              />
-              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
-            </form>
           </div>
+        </div>
 
-          {/* Desktop Nav Links */}
-          <nav className="hidden lg:flex items-center gap-1">
-            {navLinks.map((link) => {
-              const Icon = link.icon;
-              const isActive =
-                link.path === '/'
-                  ? location.pathname === '/'
-                  : location.pathname.startsWith(link.path);
-
+        {/* 4 Transport Mode Tabs (Express, Locals, Metro, Bus) */}
+        <div className="bg-[#0848a6] dark:bg-slate-950 border-t border-blue-400/20 dark:border-slate-800 px-2 sm:px-6">
+          <div className="max-w-7xl mx-auto flex items-center justify-around sm:justify-start sm:gap-4 overflow-x-auto no-scrollbar">
+            {modes.map((m) => {
+              const Icon = m.icon;
+              const isSelected = activeMode.toLowerCase() === m.id;
               return (
-                <Link
-                  key={link.name}
-                  to={link.path}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition ${
-                    isActive
-                      ? 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
-                      : 'text-slate-300 hover:text-white hover:bg-slate-800/60'
+                <button
+                  key={m.id}
+                  onClick={() => handleModeChange(m.id)}
+                  className={`flex items-center gap-1.5 py-2.5 px-3 sm:px-4 text-xs font-black tracking-wider uppercase transition-all border-b-2 whitespace-nowrap ${
+                    isSelected
+                      ? 'border-amber-300 text-amber-300 bg-white/5'
+                      : 'border-transparent text-blue-100/80 dark:text-slate-400 hover:text-white hover:border-blue-300/40'
                   }`}
                 >
-                  <Icon className="w-3.5 h-3.5" />
-                  <span>{link.name}</span>
-                </Link>
+                  <Icon className={`w-3.5 h-3.5 ${isSelected ? 'stroke-[2.5px]' : 'stroke-2'}`} />
+                  <span>{m.label}</span>
+                </button>
               );
             })}
-          </nav>
 
-          {/* Mobile Menu Button */}
-          <div className="flex lg:hidden items-center gap-2">
-            <button
-              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition"
-              aria-label="Toggle navigation menu"
+            {/* Master Routes Link */}
+            <Link
+              to="/routes"
+              className="ml-auto hidden sm:flex items-center gap-1.5 py-1 px-3 rounded-full bg-blue-700/60 dark:bg-slate-800 text-amber-300 hover:text-white text-xs font-bold border border-amber-400/40 transition"
+              title="Indian Railways Master Routes & Corridors"
             >
-              {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
-            </button>
+              <span>Corridor Routes</span>
+            </Link>
           </div>
         </div>
-      </div>
+      </header>
 
-      {/* Mobile Dropdown Menu */}
-      {mobileMenuOpen && (
-        <div className="lg:hidden border-t border-slate-800 bg-slate-950/95 px-4 pt-3 pb-6 space-y-2">
-          <form onSubmit={handleQuickSearch} className="mb-4">
-            <div className="relative">
-              <input
-                type="text"
-                value={quickSearch}
-                onChange={(e) => setQuickSearch(e.target.value)}
-                placeholder="Search train name or number..."
-                className="w-full bg-slate-900 text-sm text-slate-200 placeholder-slate-500 rounded-xl pl-9 pr-4 py-2 border border-slate-700"
-              />
-              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
-            </div>
-          </form>
+      {/* Hamburger Drawer Modal */}
+      <SideDrawer
+        isOpen={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+        currentCity={currentCity}
+        onCityChange={handleCityChange}
+      />
 
-          <div className="grid grid-cols-2 gap-2">
-            {navLinks.map((link) => {
-              const Icon = link.icon;
-              const isActive = location.pathname === link.path;
-              return (
-                <Link
-                  key={link.name}
-                  to={link.path}
-                  onClick={() => setMobileMenuOpen(false)}
-                  className={`flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm font-medium transition ${
-                    isActive
-                      ? 'bg-amber-500 text-slate-950 font-semibold'
-                      : 'bg-slate-900/60 text-slate-300 hover:text-white hover:bg-slate-800'
-                  }`}
-                >
-                  <Icon className="w-4 h-4" />
-                  <span>{link.name}</span>
-                </Link>
-              );
-            })}
-          </div>
-        </div>
-      )}
-    </header>
+      {/* Voice Search Modal */}
+      <VoiceSearchModal
+        isOpen={voiceOpen}
+        onClose={() => setVoiceOpen(false)}
+        onVoiceResult={(query) => {
+          navigate(`/search?q=${encodeURIComponent(query)}`);
+        }}
+      />
+    </>
   );
 };

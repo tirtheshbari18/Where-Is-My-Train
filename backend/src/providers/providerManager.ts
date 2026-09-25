@@ -255,6 +255,68 @@ export class ProviderManager implements IRailwayDataProvider {
   async getPnrStatus(pnr: string): Promise<PnrStatus | null> {
     return this.executeWithFallback('getPnrStatus', (p) => p.getPnrStatus(pnr));
   }
+
+  async getIntermediateStations(
+    trainNumber: string,
+    fromCode?: string,
+    toCode?: string
+  ): Promise<import('../types/railway.types.js').RouteSegment[]> {
+    return this.executeWithFallback('getIntermediateStations', (p) =>
+      p.getIntermediateStations(trainNumber, fromCode, toCode)
+    );
+  }
+
+  async getTrainOperations(
+    stationCode?: string,
+    trainNumber?: string
+  ): Promise<import('../types/railway.types.js').TrainOperation[]> {
+    return this.executeWithFallback('getTrainOperations', (p) =>
+      p.getTrainOperations(stationCode, trainNumber)
+    );
+  }
+
+  async getRailwaySections(
+    zone?: string,
+    division?: string
+  ): Promise<import('../types/railway.types.js').RailwaySection[]> {
+    return this.executeWithFallback('getRailwaySections', (p) =>
+      p.getRailwaySections(zone, division)
+    );
+  }
+
+  async getRailwayMapData(): Promise<{
+    sections: import('../types/railway.types.js').RailwaySection[];
+    stations: StationLocation[];
+    speedLimits: Array<{ label: string; min: number; max: number; color: string; count: number }>;
+  }> {
+    return this.executeWithFallback('getRailwayMapData', (p) =>
+      p.getRailwayMapData()
+    );
+  }
+
+  async getPlatformUpdates(
+    trainNumber: string,
+    stationCode?: string
+  ): Promise<import('../types/railway.types.js').PlatformUpdate[]> {
+    return this.executeWithFallback('getPlatformUpdates', (p) =>
+      p.getPlatformUpdates(trainNumber, stationCode)
+    );
+  }
+
+  async savePlatformUpdate(
+    update: Omit<import('../types/railway.types.js').PlatformUpdate, 'id' | 'updatedAt'>
+  ): Promise<import('../types/railway.types.js').PlatformUpdate> {
+    const primary = this.providers.get(this.primaryProviderCode) || this.providers.get('mock')!;
+    return primary.savePlatformUpdate(update);
+  }
+
+  async getDetailedTimetable(
+    trainNumber: string
+  ): Promise<import('../types/railway.types.js').DetailedTimetableRow[]> {
+    return this.executeWithFallback('getDetailedTimetable', (p) =>
+      p.getDetailedTimetable(trainNumber)
+    );
+  }
 }
 
 // Export singleton instance

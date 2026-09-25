@@ -10,6 +10,11 @@ import {
   TrainException,
   TrainCoachComposition,
   PnrStatus,
+  RouteSegment,
+  TrainOperation,
+  RailwaySection,
+  PlatformUpdate,
+  DetailedTimetableRow,
 } from '../types/railway.types.js';
 import { INDIAN_RAILWAY_ZONES } from '../providers/mock/mockRailwayData.js';
 
@@ -224,6 +229,53 @@ export class RailwayService {
 
   async getPnrStatus(pnr: string): Promise<PnrStatus | null> {
     return providerManager.getPnrStatus(pnr);
+  }
+
+  async getIntermediateStations(
+    trainNumber: string,
+    fromCode?: string,
+    toCode?: string
+  ): Promise<RouteSegment[]> {
+    return providerManager.getIntermediateStations(trainNumber, fromCode, toCode);
+  }
+
+  async getTrainOperations(
+    stationCode?: string,
+    trainNumber?: string
+  ): Promise<TrainOperation[]> {
+    return providerManager.getTrainOperations(stationCode, trainNumber);
+  }
+
+  async getRailwaySections(
+    zone?: string,
+    division?: string
+  ): Promise<RailwaySection[]> {
+    return providerManager.getRailwaySections(zone, division);
+  }
+
+  async getRailwayMapData(): Promise<{
+    sections: RailwaySection[];
+    stations: StationLocation[];
+    speedLimits: Array<{ label: string; min: number; max: number; color: string; count: number }>;
+  }> {
+    return providerManager.getRailwayMapData();
+  }
+
+  async getPlatformUpdates(
+    trainNumber: string,
+    stationCode?: string
+  ): Promise<PlatformUpdate[]> {
+    return providerManager.getPlatformUpdates(trainNumber, stationCode);
+  }
+
+  async savePlatformUpdate(
+    update: Omit<PlatformUpdate, 'id' | 'updatedAt'>
+  ): Promise<PlatformUpdate> {
+    return providerManager.savePlatformUpdate(update);
+  }
+
+  async getDetailedTimetable(trainNumber: string): Promise<DetailedTimetableRow[]> {
+    return providerManager.getDetailedTimetable(trainNumber);
   }
 
   getRailwayZones() {

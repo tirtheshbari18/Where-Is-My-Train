@@ -104,4 +104,53 @@ export class NtesRailwayProvider implements IRailwayDataProvider {
   async getPnrStatus(_pnr: string): Promise<PnrStatus | null> {
     throw new Error('NTES live feed requires active authorized API credentials');
   }
+
+  async getIntermediateStations(
+    _trainNumber: string,
+    _fromCode?: string,
+    _toCode?: string
+  ): Promise<import('../../types/railway.types.js').RouteSegment[]> {
+    throw new Error('NTES live feed requires active authorized API credentials');
+  }
+
+  async getTrainOperations(
+    _stationCode?: string,
+    _trainNumber?: string
+  ): Promise<import('../../types/railway.types.js').TrainOperation[]> {
+    throw new Error('NTES live feed requires active authorized API credentials');
+  }
+
+  async getRailwaySections(
+    _zone?: string,
+    _division?: string
+  ): Promise<import('../../types/railway.types.js').RailwaySection[]> {
+    throw new Error('NTES live feed requires active authorized API credentials');
+  }
+
+  async getRailwayMapData(): Promise<{
+    sections: import('../../types/railway.types.js').RailwaySection[];
+    stations: StationLocation[];
+    speedLimits: Array<{ label: string; min: number; max: number; color: string; count: number }>;
+  }> {
+    throw new Error('NTES live feed requires active authorized API credentials');
+  }
+
+  async getPlatformUpdates(
+    _trainNumber: string,
+    _stationCode?: string
+  ): Promise<import('../../types/railway.types.js').PlatformUpdate[]> {
+    throw new Error('NTES live feed requires active authorized API credentials');
+  }
+
+  async savePlatformUpdate(
+    _update: Omit<import('../../types/railway.types.js').PlatformUpdate, 'id' | 'updatedAt'>
+  ): Promise<import('../../types/railway.types.js').PlatformUpdate> {
+    throw new Error('NTES live feed requires active authorized API credentials');
+  }
+
+  async getDetailedTimetable(
+    _trainNumber: string
+  ): Promise<import('../../types/railway.types.js').DetailedTimetableRow[]> {
+    throw new Error('NTES live feed requires active authorized API credentials');
+  }
 }

@@ -29,6 +29,8 @@ export interface TrainStop {
   distanceFromSourceKm: number;
   dayCount: number;
   platform?: string;
+  actualArrival?: string;
+  actualDeparture?: string;
   latitude: number;
   longitude: number;
 }
@@ -46,6 +48,114 @@ export interface TrainCoachComposition {
   source: string;
   confidence: string;
   coaches: CoachInfo[];
+}
+
+export interface IntermediateStation {
+  stopSequence: number;
+  stationCode: string;
+  stationName: string;
+  scheduledArrival: string;
+  scheduledDeparture: string;
+  haltMinutes: number;
+  actualArrival?: string;
+  actualDeparture?: string;
+  delayMinutes?: number;
+  platform?: string;
+  distanceFromSourceKm: number;
+  dayCount: number;
+  zone: string;
+  division: string;
+  address: string;
+  speedKmH?: number;
+  elevationMeters?: number;
+  actionType?: 'STOP' | 'PASS' | 'CROSS' | 'OVERTAKE' | 'OVERTAKEN';
+  notes?: string;
+  latitude: number;
+  longitude: number;
+}
+
+export interface RouteSegment {
+  fromStationCode: string;
+  fromStationName: string;
+  toStationCode: string;
+  toStationName: string;
+  distanceKm: number;
+  intermediateCount: number;
+  intermediateStations: IntermediateStation[];
+}
+
+export interface TrainOperation {
+  id: string;
+  stationCode: string;
+  stationName: string;
+  trainNumber: string;
+  trainName: string;
+  otherTrainNumber: string;
+  otherTrainName: string;
+  otherTrainRoute: string;
+  type: string;
+  label?: string;
+  scheduledTime: string;
+  actualTime?: string;
+  platform?: string;
+  direction?: 'UP' | 'DOWN' | 'BOTH' | string;
+  description: string;
+  source?: string;
+  sourceUrl?: string;
+  retrievedAt?: string;
+  lastUpdated?: string;
+}
+
+export interface RailwaySection {
+  id: string;
+  sectionName: string;
+  fromCode: string;
+  fromName: string;
+  toCode: string;
+  toName: string;
+  distanceKm: number;
+  speedLimitKmH: number;
+  trackType: 'SINGLE' | 'DOUBLE' | 'TRIPLE' | 'QUADRUPLE';
+  electrification: 'NONE' | 'ELECTRIC_25KV' | 'DIESEL';
+  zone: string;
+  division: string;
+  coordinates: [number, number][];
+}
+
+export interface PlatformUpdate {
+  id: string;
+  trainNumber: string;
+  stationCode: string;
+  stationName: string;
+  oldPlatform: string;
+  newPlatform: string;
+  source: string;
+  updatedAt: string;
+  isOfficial?: boolean;
+}
+
+export interface DetailedTimetableRow {
+  sequence: number;
+  track: string;
+  stationCode: string;
+  stationName: string;
+  xo: 'X' | 'O' | '-';
+  note: string;
+  arrival: string;
+  averageArrival: string;
+  departure: string;
+  averageDeparture: string;
+  haltMinutes: number;
+  platform: string;
+  dayCount: number;
+  distanceKm: number;
+  speedKmH: number;
+  elevationMeters: number;
+  zone: string;
+  division: string;
+  address: string;
+  actionType: 'STOP' | 'PASS' | 'CROSS' | 'OVERTAKE' | 'OVERTAKEN';
+  isIntermediate?: boolean;
 }
 
 export interface RunningStatus {
@@ -103,6 +213,48 @@ export interface StationLocation {
   category?: string;
   wifiAvailable?: boolean;
   distanceKm?: number;
+}
+
+export interface StationDetailData extends StationLocation {
+  officialName?: string;
+  district?: string;
+  city?: string;
+  isJunction?: boolean;
+  isTerminal?: boolean;
+  platforms?: Array<{
+    platformNumber: string;
+    platformName?: string;
+    platformType: string;
+    verificationStatus: string;
+  }>;
+  previousStation?: { code: string; name: string; distanceKm: number };
+  nextStation?: { code: string; name: string; distanceKm: number };
+  routeKm?: string;
+  railwayLines?: string[];
+  source?: string;
+  sourceType?: string;
+  lastVerifiedAt?: string;
+}
+
+export interface RailwayRouteStationItem {
+  sequence_order: number;
+  station_code: string;
+  station_name: string;
+  km_from_origin: number;
+  distance_from_previous_km: number;
+  distance_to_next_km: number;
+  is_junction: boolean;
+}
+
+export interface RailwayRouteDetail {
+  route_code: string;
+  route_name: string;
+  origin_station_code: string;
+  dest_station_code: string;
+  total_distance_km: number;
+  direction: 'DOWN' | 'UP';
+  active: boolean;
+  stations: RailwayRouteStationItem[];
 }
 
 export interface LiveStationTrain {
@@ -313,5 +465,165 @@ export const railwayApi = {
       method: 'POST',
     });
     return res;
+  },
+
+  async getIntermediateStations(trainNumber: string, from?: string, to?: string): Promise<RouteSegment[]> {
+    let url = `${API_BASE}/trains/${encodeURIComponent(trainNumber)}/intermediate`;
+    const params = new URLSearchParams();
+    if (from) params.set('from', from);
+    if (to) params.set('to', to);
+    if (params.toString()) url += `?${params.toString()}`;
+    const res = await fetchJson<{ success: boolean; data: RouteSegment[] }>(url);
+    return res.data;
+  },
+
+  async getTrainOperations(trainNumber?: string, station?: string): Promise<TrainOperation[]> {
+    let url = trainNumber
+      ? `${API_BASE}/trains/${encodeURIComponent(trainNumber)}/operations`
+      : `${API_BASE}/train-operations`;
+    if (station) {
+      url += `?station=${encodeURIComponent(station)}`;
+    }
+    const res = await fetchJson<{ success: boolean; data: TrainOperation[] }>(url);
+    return res.data;
+  },
+
+  async getPlatformUpdates(trainNumber: string, station?: string): Promise<PlatformUpdate[]> {
+    let url = `${API_BASE}/trains/${encodeURIComponent(trainNumber)}/platforms`;
+    if (station) {
+      url += `?station=${encodeURIComponent(station)}`;
+    }
+    const res = await fetchJson<{ success: boolean; data: PlatformUpdate[] }>(url);
+    return res.data;
+  },
+
+  async savePlatformUpdate(
+    trainNumber: string,
+    update: {
+      stationCode: string;
+      stationName?: string;
+      oldPlatform?: string;
+      newPlatform: string;
+      source?: string;
+    }
+  ): Promise<PlatformUpdate> {
+    const res = await fetchJson<{ success: boolean; data: PlatformUpdate; message: string }>(
+      `${API_BASE}/trains/${encodeURIComponent(trainNumber)}/platforms`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(update),
+      }
+    );
+    return res.data;
+  },
+
+  async getDetailedTimetable(trainNumber: string): Promise<DetailedTimetableRow[]> {
+    const res = await fetchJson<{ success: boolean; data: DetailedTimetableRow[] }>(
+      `${API_BASE}/trains/${encodeURIComponent(trainNumber)}/detailed-timetable`
+    );
+    return res.data;
+  },
+
+  async getRailwaySections(zone?: string, division?: string): Promise<RailwaySection[]> {
+    const params = new URLSearchParams();
+    if (zone && zone !== 'ALL') params.set('zone', zone);
+    if (division && division !== 'ALL') params.set('division', division);
+    const query = params.toString() ? `?${params.toString()}` : '';
+    const res = await fetchJson<{ success: boolean; data: RailwaySection[] }>(
+      `${API_BASE}/railway/sections${query}`
+    );
+    return res.data;
+  },
+
+  async getRailwayMapData(): Promise<{
+    sections: RailwaySection[];
+    stations: StationLocation[];
+    speedLimits: Array<{ label: string; min: number; max: number; color: string; count: number }>;
+  }> {
+    const res = await fetchJson<{
+      success: boolean;
+      data: {
+        sections: RailwaySection[];
+        stations: StationLocation[];
+        speedLimits: Array<{ label: string; min: number; max: number; color: string; count: number }>;
+      };
+    }>(`${API_BASE}/railway/map-data`);
+    return res.data;
+  },
+
+  async getStationDetail(code: string): Promise<StationDetailData> {
+    const res = await fetchJson<{ success: boolean; data: StationDetailData }>(
+      `${API_BASE}/stations/${encodeURIComponent(code)}`
+    );
+    return res.data;
+  },
+
+  async getStationPlatforms(code: string): Promise<any[]> {
+    const res = await fetchJson<{ success: boolean; data: any[] }>(
+      `${API_BASE}/stations/${encodeURIComponent(code)}/platforms`
+    );
+    return res.data;
+  },
+
+  async getStationDepartures(code: string): Promise<{
+    stationCode: string;
+    stationName: string;
+    total: number;
+    data: Array<{
+      trainNumber: string;
+      trainName: string;
+      destination: string;
+      departureTime: string;
+      platform: string;
+      delay: string;
+      status: string;
+    }>;
+  }> {
+    const res = await fetchJson<any>(
+      `${API_BASE}/stations/${encodeURIComponent(code)}/departures`
+    );
+    return res;
+  },
+
+  async getDivisions(zone?: string): Promise<any[]> {
+    const q = zone ? `?zone=${encodeURIComponent(zone)}` : '';
+    const res = await fetchJson<{ success: boolean; data: any[] }>(`${API_BASE}/divisions${q}`);
+    return res.data;
+  },
+
+  async getRailwayLines(): Promise<any[]> {
+    const res = await fetchJson<{ success: boolean; data: any[] }>(`${API_BASE}/railway-lines`);
+    return res.data;
+  },
+
+  async getRoutes(): Promise<any[]> {
+    const res = await fetchJson<{ success: boolean; data: any[] }>(`${API_BASE}/routes`);
+    return res.data;
+  },
+
+  async getRoute(id: string): Promise<RailwayRouteDetail> {
+    const res = await fetchJson<{ success: boolean; data: RailwayRouteDetail }>(
+      `${API_BASE}/routes/${encodeURIComponent(id)}`
+    );
+    return res.data;
+  },
+
+  async searchRoutes(from: string, to: string): Promise<{
+    success: boolean;
+    from: string;
+    to: string;
+    authoritative_distance_km: number | null;
+    matching_routes: any[];
+  }> {
+    const res = await fetchJson<any>(
+      `${API_BASE}/routes/search?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`
+    );
+    return res;
+  },
+
+  async getDataVersion(): Promise<any> {
+    const res = await fetchJson<{ success: boolean; data: any }>(`${API_BASE}/data-version`);
+    return res.data;
   },
 };

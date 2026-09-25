@@ -15,7 +15,13 @@ export type TrainType =
   | 'Antyodaya'
   | 'Humsafar'
   | 'Passenger'
-  | 'Special';
+  | 'Special'
+  | 'Fast Local'
+  | 'Slow Local'
+  | 'AC Local'
+  | 'Local'
+  | 'MEMU'
+  | 'DEMU';
 
 export interface StationLocation {
   code: string;
@@ -33,7 +39,25 @@ export interface StationLocation {
 export interface CoachInfo {
   position: number;
   code: string; // e.g. "ENG", "PWR", "C1", "C2", "E1", "A1", "B1", "B2", "S1", "SL", "GEN", "GRD"
-  type: 'Engine' | 'Executive Chair Car' | 'AC Chair Car' | 'AC 1 Tier' | 'AC 2 Tier' | 'AC 3 Tier' | 'AC 3 Economy' | 'Sleeper' | 'General' | 'Guard / Luggage';
+  type:
+    | 'Engine'
+    | 'Executive Chair Car'
+    | 'AC Chair Car'
+    | 'AC 1 Tier'
+    | 'AC 1st Class'
+    | 'AC 2 Tier'
+    | 'AC 3 Tier'
+    | 'AC 3 Economy'
+    | 'Sleeper'
+    | 'General'
+    | 'Guard / Luggage'
+    | 'Pantry Car'
+    | 'Luggage & Generator Car'
+    | 'Driving Trailer Coach (General)'
+    | 'Motor Coach'
+    | 'Trailer Coach'
+    | 'Trailer Coach (Ladies)'
+    | 'Trailer Coach (First Class)';
   hasPantry?: boolean;
 }
 
@@ -215,3 +239,137 @@ export interface ProviderHealthStatus {
   lastChecked: string;
   endpointUrl?: string;
 }
+
+// ---------------------------------------------------------
+// Comprehensive Railway Information Architecture Types
+// ---------------------------------------------------------
+
+export type IntermediateActionType = 'STOP' | 'PASS' | 'CROSS' | 'OVERTAKE' | 'OPERATIONAL';
+
+export interface IntermediateStation {
+  stopSequence: number;
+  stationCode: string;
+  stationName: string;
+  state?: string;
+  scheduledArrival: string;
+  scheduledDeparture: string;
+  actualArrival?: string;
+  actualDeparture?: string;
+  haltMinutes: number;
+  distanceFromSourceKm: number;
+  dayCount: number;
+  platform?: string;
+  speedKmH: number;
+  elevationMeters: number;
+  zone: string;
+  division: string;
+  address: string;
+  actionType: IntermediateActionType;
+  latitude: number;
+  longitude: number;
+  isCompleted?: boolean;
+  isCurrent?: boolean;
+  notes?: string;
+}
+
+export interface RouteSegment {
+  fromStationCode: string;
+  fromStationName: string;
+  toStationCode: string;
+  toStationName: string;
+  distanceKm: number;
+  intermediateCount: number;
+  intermediateStations: IntermediateStation[];
+}
+
+export type TrainOperationType =
+  | 'CROSSING'
+  | 'OVERTAKING'
+  | 'OVERTAKEN'
+  | 'PRECEDENCE'
+  | 'PASSING'
+  | 'PLATFORM_SHARING'
+  | 'CREW_CHANGE'
+  | 'LOCO_REVERSAL'
+  | 'WATERING'
+  | 'TECHNICAL_HALT'
+  | 'PARALLEL_RUN'
+  | 'ATTACH_DETACH'
+  | 'MEETING'
+  | string;
+
+export interface TrainOperation {
+  id: string;
+  type: TrainOperationType;
+  label?: string;
+  stationCode: string;
+  stationName: string;
+  trainNumber: string;
+  trainName: string;
+  otherTrainNumber: string;
+  otherTrainName: string;
+  otherTrainRoute: string;
+  scheduledTime: string;
+  actualTime?: string;
+  platform?: string;
+  direction?: 'UP' | 'DOWN' | 'BOTH' | string;
+  description: string;
+  source: string;
+  sourceUrl?: string;
+  retrievedAt?: string;
+  lastUpdated?: string;
+}
+
+export interface RailwaySection {
+  id: string;
+  sectionName: string;
+  fromCode: string;
+  fromName: string;
+  toCode: string;
+  toName: string;
+  distanceKm: number;
+  speedLimitKmH: number;
+  trackType: 'SINGLE' | 'DOUBLE' | 'TRIPLE' | 'QUADRUPLE';
+  electrification: 'ELECTRIC_25KV' | 'DIESEL' | 'UNDER_ELECTRIFICATION';
+  zone: string;
+  division: string;
+  coordinates: [number, number][];
+}
+
+export interface PlatformUpdate {
+  id: string;
+  trainNumber: string;
+  stationCode: string;
+  stationName: string;
+  oldPlatform?: string;
+  newPlatform: string;
+  source: string; // e.g. "Station PA Announcement", "User Confirmed", "Station Master"
+  updatedAt: string; // ISO 8601
+  isOfficial: boolean;
+}
+
+export interface DetailedTimetableRow {
+  index: number;
+  track: string;
+  stationCode: string;
+  stationName: string;
+  xoType: 'X' | 'O'; // X = Stops, O = Passes through
+  note?: string;
+  arrival: string;
+  avgArrival: string;
+  departure: string;
+  avgDeparture: string;
+  haltMinutes: number;
+  platform?: string;
+  day: number;
+  distanceKm: number;
+  speedKmH: number;
+  elevationMeters: number;
+  zone: string;
+  division: string;
+  address: string;
+  isIntermediate?: boolean;
+  isCompleted?: boolean;
+  isCurrent?: boolean;
+}
+

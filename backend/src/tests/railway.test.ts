@@ -168,4 +168,117 @@ describe('WHERE IS MY TRAIN - Backend API Tests', () => {
       expect(stats.hits).toBeGreaterThan(0);
     });
   });
+
+  describe('Indian Railways Master Database & Data Quality', () => {
+    it('should return master railway zones', async () => {
+      const res = await request(app).get('/api/zones');
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.total).toBeGreaterThanOrEqual(18);
+    });
+
+    it('should return railway divisions filtered by zone', async () => {
+      const res = await request(app).get('/api/divisions?zone=WR');
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.every((d: any) => d.zone_code === 'WR')).toBe(true);
+    });
+
+    it('should return master railway lines', async () => {
+      const res = await request(app).get('/api/railway-lines');
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.total).toBeGreaterThan(0);
+    });
+
+    it('should search master corridor routes between stations', async () => {
+      const res = await request(app).get('/api/routes/search?from=BOR&to=DRD');
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.authoritative_distance_km).toBe(22);
+      expect(res.body.matching_routes.length).toBeGreaterThan(0);
+    });
+
+    it('should generate automated data quality audit report with 100% score', async () => {
+      const res = await request(app).get('/api/data-quality-report');
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.overall_status).toBe('PASSED_VERIFIED');
+      expect(res.body.data.errors).toHaveLength(0);
+      expect(res.body.data.quality_score).toBe('100%');
+    });
+  });
+
+  describe('Suburban Locals, Metro & Buses', () => {
+    it('should return local train lines', async () => {
+      const res = await request(app).get('/api/locals/lines');
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.length).toBeGreaterThan(0);
+    });
+
+    it('should search local trains between Churchgate and Virar', async () => {
+      const res = await request(app).get('/api/locals/search?origin=CCG&destination=VR');
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.length).toBeGreaterThan(0);
+    });
+
+    it('should return metro network lines', async () => {
+      const res = await request(app).get('/api/metro/lines');
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.length).toBeGreaterThan(0);
+    });
+
+    it('should return active mega blocks and safety alerts', async () => {
+      const res = await request(app).get('/api/blocks');
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.length).toBeGreaterThan(0);
+    });
+
+    it('should search connecting bus routes', async () => {
+      const res = await request(app).get('/api/buses/search');
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.length).toBeGreaterThan(0);
+    });
+  });
+
+  describe('Crowdsourced Platform Voting & Feedback', () => {
+    it('should return platform vote statistics for a train at a station', async () => {
+      const res = await request(app).get('/api/platform-votes/19417/BOR');
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.stationCode).toBe('BOR');
+      expect(res.body.data.platform).toBe('2');
+    });
+
+    it('should accept community platform confirmation votes', async () => {
+      const res = await request(app)
+        .post('/api/platform-votes')
+        .send({
+          trainNumber: '19417',
+          stationCode: 'BOR',
+          platform: '2',
+          vote: 'YES',
+        });
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+    });
+
+    it('should accept user feedback submission', async () => {
+      const res = await request(app)
+        .post('/api/feedback')
+        .send({
+          category: 'PLATFORM_ACCURACY',
+          message: 'Platform 2 at Boisar is accurately tracked.',
+          userEmail: 'user@example.com',
+        });
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+    });
+  });
 });
+

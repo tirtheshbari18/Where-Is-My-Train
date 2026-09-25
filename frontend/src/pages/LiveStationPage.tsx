@@ -12,14 +12,14 @@ import { railwayApi, LiveStationBoard, StationLocation } from '../api/railwayApi
 import { DelayBadge } from '../components/trains/DelayBadge.js';
 
 const QUICK_STATIONS = [
+  { code: 'LJN', name: 'Lucknow Jn' },
+  { code: 'KSJ', name: 'Kasganj Jn' },
   { code: 'MMCT', name: 'Mumbai Central' },
   { code: 'BVI', name: 'Borivali' },
   { code: 'NDLS', name: 'New Delhi' },
   { code: 'HWH', name: 'Howrah' },
   { code: 'MAS', name: 'Chennai Central' },
-  { code: 'SBC', name: 'Bengaluru' },
-  { code: 'ST', name: 'Surat' },
-  { code: 'BRC', name: 'Vadodara' },
+  { code: 'CNB', name: 'Kanpur Central' },
   { code: 'ADI', name: 'Ahmedabad' },
 ];
 
