@@ -2,7 +2,23 @@
 import { extractStationCode } from '../utils/stationResolver.js';
 import { normalizeDate } from '../utils/dateNormalizer.js';
 
-const API_BASE = '/api';
+/**
+ * Base URL for every railway request.
+ *
+ * Defaults to the same-origin `/api` prefix, which is what both the local Vite
+ * dev proxy and the Vercel rewrite (`/api/*` -> `api/index.js`) serve.
+ * Override it with `VITE_API_BASE_URL` when the API is hosted elsewhere, e.g.
+ *   VITE_API_BASE_URL=https://railway-api.example.com/api
+ * A trailing slash is tolerated so `https://host/api/` and `https://host/api`
+ * behave identically.
+ */
+const configuredBase = String(import.meta.env.VITE_API_BASE_URL || '/api').trim();
+export const API_BASE = configuredBase.replace(/\/+$/, '') || '/api';
+
+/** Hard ceiling for a single API round-trip so the UI never spins forever. */
+const REQUEST_TIMEOUT_MS = 15000;
+/** Total attempts (first try + one automatic retry on transient failures). */
+const MAX_ATTEMPTS = 2;
 
 export interface TrainSummary {
   trainNumber: string;
@@ -388,6 +404,11 @@ export function setAdminKey(key: string): void {
 
 /** Turn any failed response into a short, human-readable message (never a stack trace). */
 function toFriendlyError(status: number, json: any): string {
+  // Gateway/upstream failures are always "we could not reach the service" — never
+  // surface the raw server text, and make sure the caller recognises it as a
+  // connectivity problem so it can fall back to cached/offline data.
+  if (status >= 500) return 'Unable to connect to railway data service.';
+
   const serverMsg =
     typeof json?.error === 'string'
       ? json.error
@@ -403,10 +424,45 @@ function toFriendlyError(status: number, json: any): string {
   if (status === 401 || status === 403) return 'You are not authorised to perform this action.';
   if (status === 404) return 'The requested railway data was not found.';
   if (status === 429) return 'Too many requests. Please wait a moment and try again.';
-  if (status === 503) return 'Unable to connect to railway data service.';
-  if (status >= 500) return 'Unable to connect to railway data service.';
   return `Request failed (status ${status}).`;
 }
+
+/**
+ * True when the failure means "the railway service could not be reached"
+ * (offline, CORS, DNS, timeout, gateway error) rather than a bad query.
+ * Callers use this to decide whether it is safe to fall back to cached/demo data.
+ */
+export function isConnectionError(err: unknown): boolean {
+  const msg = (err instanceof Error ? err.message : String(err ?? '')).toLowerCase();
+  return (
+    !msg ||
+    msg.includes('railway data service') ||
+    msg.includes('internal railway service error') ||
+    msg.includes('connect') ||
+    msg.includes('reach') ||
+    msg.includes('network') ||
+    msg.includes('fetch') ||
+    msg.includes('load failed') ||
+    msg.includes('timed out') ||
+    msg.includes('abort') ||
+    msg.includes('socket') ||
+    // gateway status codes, but never a bare "500" inside e.g. a train number
+    /\b(500|502|503|504)\b/.test(msg)
+  );
+}
+
+/** `fetch` with an abort timer, so a hung upstream can never wedge the UI. */
+async function fetchWithTimeout(url: string, init: RequestInit): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
   const headers: Record<string, string> = {
@@ -415,32 +471,55 @@ async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
   const adminKey = getAdminKey();
   if (adminKey) headers['x-admin-key'] = adminKey;
 
-  let res: Response;
-  try {
-    res = await fetch(url, { ...options, headers });
-  } catch (err: any) {
-    console.error(`[RailwayAPI Network Error] ${url}:`, err?.message || err);
-    throw new Error('Unable to connect to railway data service.');
+  const method = (options?.method || 'GET').toUpperCase();
+  const canRetry = method === 'GET' || method === 'HEAD';
+
+  let lastError: Error = new Error('Unable to connect to railway data service.');
+
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    let res: Response;
+    try {
+      res = await fetchWithTimeout(url, { ...options, headers });
+    } catch (err: any) {
+      const reason = err?.name === 'AbortError' ? 'request timed out' : err?.message || err;
+      console.error(`[RailwayAPI Network Error] ${url} (attempt ${attempt}/${MAX_ATTEMPTS}):`, reason);
+      lastError = new Error('Unable to connect to railway data service.');
+      if (attempt < MAX_ATTEMPTS && canRetry) {
+        await sleep(400);
+        continue;
+      }
+      throw lastError;
+    }
+
+    // Transient upstream failures are worth one retry before we give up.
+    const transient = res.status >= 500 || res.status === 429;
+    if (transient && attempt < MAX_ATTEMPTS && canRetry) {
+      console.warn(`[RailwayAPI Retryable] ${url} -> Status ${res.status}, retrying...`);
+      await sleep(400);
+      continue;
+    }
+
+    let json: any = null;
+    try {
+      json = await res.json();
+    } catch {
+      json = null;
+    }
+
+    console.log(`[RailwayAPI] ${method} ${url} -> Status ${res.status}`);
+
+    if (!res.ok) {
+      console.error(`[RailwayAPI Error] Status: ${res.status} ${res.statusText}`, json);
+      throw new Error(toFriendlyError(res.status, json));
+    }
+    if (json === null) {
+      console.error(`[RailwayAPI Error] Invalid JSON from ${url}`);
+      throw new Error('Received an invalid response from the server.');
+    }
+    return json;
   }
 
-  let json: any = null;
-  try {
-    json = await res.json();
-  } catch {
-    json = null;
-  }
-
-  console.log(`[RailwayAPI] ${options?.method || 'GET'} ${url} -> Status ${res.status}`);
-
-  if (!res.ok) {
-    console.error(`[RailwayAPI Error] Status: ${res.status} ${res.statusText}`, json);
-    throw new Error(toFriendlyError(res.status, json));
-  }
-  if (json === null) {
-    console.error(`[RailwayAPI Error] Invalid JSON from ${url}`);
-    throw new Error('Received an invalid response from the server.');
-  }
-  return json;
+  throw lastError;
 }
 
 export const railwayApi = {

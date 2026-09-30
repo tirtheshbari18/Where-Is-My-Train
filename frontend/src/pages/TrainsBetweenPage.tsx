@@ -14,7 +14,8 @@ import {
   Search,
   RefreshCw,
 } from 'lucide-react';
-import { railwayApi, TrainSummary } from '../api/railwayApi.js';
+import { railwayApi, TrainSummary, isConnectionError } from '../api/railwayApi.js';
+import { getFallbackTrainsBetween } from '../api/fallbackRailwayData.js';
 import { TrainCard } from '../components/trains/TrainCard.js';
 import { StationAutocomplete } from '../components/common/StationAutocomplete.js';
 import { offlineStorageService } from '../services/offlineStorageService.js';
@@ -61,6 +62,9 @@ export const TrainsBetweenPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [isOffline, setIsOffline] = useState(false);
   const [refreshingLive, setRefreshingLive] = useState(false);
+  // Non-fatal banner: shown when we had to serve a bundled timetable because
+  // the live railway API could not be reached.
+  const [dataNotice, setDataNotice] = useState<string | null>(null);
 
   // Request guard to prevent race conditions
   const searchGuard = useRequestGuard();
@@ -76,12 +80,14 @@ export const TrainsBetweenPage: React.FC = () => {
         setTrains([]);
         setLoading(false);
         setError(null);
+        setDataNotice(null);
       }
       return;
     }
 
     setLoading(true);
     setError(null);
+    setDataNotice(null);
 
     // Save into search history
     searchHistoryService.addEntry({
@@ -95,6 +101,7 @@ export const TrainsBetweenPage: React.FC = () => {
       if (!searchGuard.isCurrent(requestId)) return;
       setTrains(cached as any);
       setIsOffline(true);
+      setDataNotice(null);
       setLoading(false);
       return;
     }
@@ -106,31 +113,48 @@ export const TrainsBetweenPage: React.FC = () => {
       setTrains(data);
       setIsOffline(false);
       setError(null);
+      setDataNotice(null);
       data.forEach((t) => offlineStorageService.cacheTrain(t));
     } catch (err: any) {
       console.error('[TrainsBetween] Search request failed:', err);
       if (!searchGuard.isCurrent(requestId)) return;
+
+      const msg = err?.message || '';
       const cached = offlineStorageService.searchOfflineBetween(cleanFrom, cleanTo);
+
       if (cached.length > 0) {
         setTrains(cached as any);
         setIsOffline(true);
-      } else {
-        const msg = err?.message || '';
-        if (
-          msg.includes('connect') ||
-          msg.includes('reach') ||
-          msg.includes('network') ||
-          msg.includes('Failed to fetch') ||
-          msg.includes('500') ||
-          msg.includes('503') ||
-          msg.includes('railway data service')
-        ) {
-          setError('Unable to connect to railway data service.');
-        } else {
-          setError(msg || 'Unable to connect to railway data service.');
-        }
-        setTrains([]);
+        setError(null);
+        setDataNotice(null);
+        return;
       }
+
+      // The live railway service could not be reached (or answered with a
+      // gateway error). Serve the bundled corridor timetable rather than
+      // dropping the user into an empty error state.
+      const fallback = isConnectionError(err) ? getFallbackTrainsBetween(cleanFrom, cleanTo) : [];
+      if (fallback.length > 0) {
+        setTrains(fallback);
+        setIsOffline(false);
+        setError(null);
+        setDataNotice(
+          `Live railway data is unreachable right now, so this is the bundled offline timetable for ` +
+            `${fallback[0].sourceName} (${fallback[0].sourceCode}) - ${fallback[0].destinationName} ` +
+            `(${fallback[0].destinationCode}). Tap Retry to load live availability, delays and platforms.`
+        );
+        return;
+      }
+
+      // Nothing local to fall back on: report a precise reason when we have one.
+      if (!isConnectionError(err) && msg) {
+        setError(msg);
+      } else {
+        setError(
+          'Unable to connect to railway data service. Please check your connection and try again.'
+        );
+      }
+      setTrains([]);
     } finally {
       if (searchGuard.isCurrent(requestId)) setLoading(false);
     }
@@ -261,6 +285,25 @@ export const TrainsBetweenPage: React.FC = () => {
             <span>Offline mode: showing previously saved schedule.</span>
             <span className="font-bold uppercase text-[10px] bg-amber-200 dark:bg-amber-900/60 px-2 py-0.5 rounded">
               Cached Data
+            </span>
+          </div>
+        )}
+
+        {dataNotice && !isOffline && (
+          <div className="p-3 bg-blue-50 dark:bg-blue-950/40 border border-blue-300 dark:border-blue-800 rounded-xl text-xs text-blue-800 dark:text-blue-300 flex flex-wrap items-center justify-between gap-3">
+            <span className="leading-relaxed">{dataNotice}</span>
+            <span className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => fetchTrainsBetween(fromStation, toStation, travelDate)}
+                className="px-3 py-1 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold transition inline-flex items-center gap-1.5"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                <span>Retry</span>
+              </button>
+              <span className="font-bold uppercase text-[10px] bg-blue-200 dark:bg-blue-900/60 px-2 py-0.5 rounded">
+                Offline Timetable
+              </span>
             </span>
           </div>
         )}

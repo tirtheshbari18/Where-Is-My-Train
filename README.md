@@ -287,14 +287,60 @@ npm run build
 
 ## 8. Deployment Guide
 
-### Deploy Frontend to Vercel
+### Deploy to Vercel (single project — recommended)
+
+The repo root is the Vercel project. The root `vercel.json` wires everything together:
+
+| Setting | Value |
+| --- | --- |
+| Root Directory | *(leave empty — repo root)* |
+| Framework Preset | Other |
+| Install Command | `npm run install:all` |
+| Build Command | `npm run build` (compiles `backend` with `tsc`, then builds `frontend` with Vite) |
+| Output Directory | `frontend/dist` |
+
+Routing defined in `vercel.json`:
+
+- `/api/*` → `api/index.js`, a Node serverless function that exports the compiled
+  Express app from `backend/dist/index.js` (same routes/controllers/providers as local dev).
+- `/*` → static files from `frontend/dist`, with an SPA fallback to `index.html` so
+  `/train/:number`, `/station/:code`, `/live-station`, `/search`, … survive a hard refresh.
+
+> **Important:** do not set *Root Directory* to `frontend` — that would drop the `/api`
+> rewrite and every search would fail with *"Unable to connect to railway data service."*
+> The frontend never needs its own proxy in this layout.
+
+Pushing to the default branch triggers a production deployment through the Vercel GitHub
+integration; `vercel --prod` from the CLI also works once `vercel link` has been run.
+
+#### Required environment variables (Vercel → Project → Settings → Environment Variables)
+
+Set these for **Production** (and Preview if you use it):
+
+| Name | Scope | Value | Notes |
+| --- | --- | --- | --- |
+| `VITE_API_BASE_URL` | Build | `/api` (default) | Same-origin API. Only change it if the API is hosted on a separate domain. |
+| `NODE_ENV` | Runtime | `production` | |
+| `DEFAULT_DATA_PROVIDER` | Runtime | `mock` | Use `ntes`/`licensed` only with real credentials. |
+| `ENABLE_PROVIDER_FALLBACK` | Runtime | `true` | Falls back to the mock provider on upstream failure. |
+| `CACHE_TTL_SECONDS` | Runtime | `60` | |
+| `JWT_SECRET` | Runtime | *(long random string)* | Required for user/favourites features. |
+| `ADMIN_API_KEY` | Runtime | *(long random string)* | Admin routes fail safely with 503 when unset. |
+| `DATABASE_URL` | Runtime | *(Postgres connection string)* | Optional — only needed for Prisma-backed routes (platform votes, favourites). Without it those routes report `available: false` instead of crashing. |
+
+If the API is deployed separately instead, set `VITE_API_BASE_URL` to its public base URL
+(for example `https://my-api.example.com/api`) **and** allow the frontend origin in that
+service's CORS configuration.
+
+### Deploy Frontend Only (alternative)
 1. Set Framework Preset: **Vite**
-2. Root Directory: `frontend` (or keep root with `npm --prefix frontend run build` as configured in root `vercel.json`)
+2. Root Directory: `frontend`
 3. Build Command: `npm run build`
 4. Output Directory: `dist`
-5. The included `vercel.json` ensures all SPA routes (`/train/:number`, `/station/:code`, `/live-station`, `/search`, etc.) work seamlessly after direct browser refreshes.
+5. Set `VITE_API_BASE_URL` to the publicly reachable backend API — `/api` only works when
+   a rewrite/proxy routes it to the backend.
 
-### Deploy Backend
+### Deploy Backend Separately (alternative)
 1. Host on any Node.js container or serverless runtime (Render, Railway, AWS ECS, Fly.io).
 2. Set Environment Variables from `.env.example`.
 3. Set Start Command: `npm start` (runs `node dist/index.js`).
