@@ -1,11 +1,13 @@
 import { Request, Response, NextFunction } from 'express';
 import { railwayService } from '../services/railwayService.js';
+import { resolveStationCode } from '../utils/stationResolver.js';
+import { normalizeDate } from '../utils/dateNormalizer.js';
 
 export class TrainsController {
   static async search(req: Request, res: Response, next: NextFunction) {
     try {
-      const from = (req.query.from as string || '').toUpperCase().trim();
-      const to = (req.query.to as string || '').toUpperCase().trim();
+      const from = (req.query.from as string || '').trim();
+      const to = (req.query.to as string || '').trim();
       if (from && to) {
         return TrainsController.getBetweenStations(req, res, next);
       }
@@ -176,21 +178,25 @@ export class TrainsController {
 
   static async getBetweenStations(req: Request, res: Response, next: NextFunction) {
     try {
-      const from = req.query.from as string;
-      const to = req.query.to as string;
-      const date = req.query.date as string | undefined;
+      const rawFrom = (req.query.from as string || '').trim();
+      const rawTo = (req.query.to as string || '').trim();
+      const rawDate = req.query.date as string | undefined;
 
-      if (!from || !to) {
+      if (!rawFrom || !rawTo) {
         return res.status(400).json({
           success: false,
           error: {
-            message: 'Both "from" and "to" station codes are required.',
+            message: 'Both "from" and "to" station codes or names are required.',
             code: 'MISSING_STATION_CODES',
           },
         });
       }
 
-      const trains = await railwayService.getTrainsBetweenStations(from, to, date);
+      const from = resolveStationCode(rawFrom);
+      const to = resolveStationCode(rawTo);
+      const { isoDate } = normalizeDate(rawDate);
+
+      const trains = await railwayService.getTrainsBetweenStations(from, to, isoDate);
 
       res.json({
         success: true,
@@ -198,7 +204,7 @@ export class TrainsController {
         total: trains.length,
         from,
         to,
-        date: date || new Date().toISOString().split('T')[0],
+        date: isoDate,
       });
     } catch (err) {
       next(err);
@@ -344,18 +350,21 @@ export class TrainsController {
   static async getSegment(req: Request, res: Response, next: NextFunction) {
     try {
       const number = req.params.number as string;
-      const from = (req.query.from as string || '').toUpperCase().trim();
-      const to = (req.query.to as string || '').toUpperCase().trim();
+      const rawFrom = (req.query.from as string || '').trim();
+      const rawTo = (req.query.to as string || '').trim();
 
-      if (!from || !to) {
+      if (!rawFrom || !rawTo) {
         return res.status(400).json({
           success: false,
           error: {
-            message: 'Both "from" and "to" station codes are required for segment query.',
+            message: 'Both "from" and "to" station codes or names are required for segment query.',
             code: 'MISSING_SEGMENT_PARAMS',
           },
         });
       }
+
+      const from = resolveStationCode(rawFrom);
+      const to = resolveStationCode(rawTo);
 
       if (from === to) {
         return res.status(400).json({

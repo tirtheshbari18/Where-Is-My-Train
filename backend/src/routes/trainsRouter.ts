@@ -10,6 +10,9 @@ router.get('/', searchRateLimiter, TrainsController.search);
 // Search trains (by number, name, or from/to stations)
 router.get('/search', searchRateLimiter, TrainsController.search);
 
+// Search trains between stations: GET /api/trains/between?from=BOR&to=DRD&date=...
+router.get('/between', searchRateLimiter, TrainsController.getBetweenStations);
+
 // Train route coordinates (for maps)
 router.get('/:number/route', TrainsController.getRoute);
 

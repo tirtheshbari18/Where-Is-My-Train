@@ -50,6 +50,7 @@ import { TrainNotRunningModal } from '../components/modals/TrainNotRunningModal.
 import { NoIntermediateModal } from '../components/modals/NoIntermediateModal.js';
 import { EditPlatformModal } from '../components/modals/EditPlatformModal.js';
 import { OperationDetailModal } from '../components/modals/OperationDetailModal.js';
+import { normalizeDate } from '../utils/dateNormalizer.js';
 
 export const TrainDetailsPage: React.FC = () => {
   const { number } = useParams<{ number: string }>();
@@ -109,7 +110,11 @@ export const TrainDetailsPage: React.FC = () => {
 
   // Selected date ISO string (YYYY-MM-DD)
   const todayStr = useMemo(() => new Date().toISOString().split('T')[0], []);
-  const [selectedDateStr, setSelectedDateStr] = useState<string>(todayStr);
+  const initialDateQuery = searchParams.get('date');
+  const normalizedInitialDate = useMemo(() => {
+    return initialDateQuery ? normalizeDate(initialDateQuery).isoDate : todayStr;
+  }, [initialDateQuery, todayStr]);
+  const [selectedDateStr, setSelectedDateStr] = useState<string>(normalizedInitialDate);
   const [isDateDropdownOpen, setIsDateDropdownOpen] = useState(false);
 
   const selectedDateObj = useMemo(() => new Date(selectedDateStr), [selectedDateStr]);
@@ -184,10 +189,8 @@ export const TrainDetailsPage: React.FC = () => {
 
   // Check if train runs on selected date
   const checkTrainRunsOnDate = (trainData: any, dateStr: string) => {
-    const d = new Date(dateStr);
-    const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-    const dayNameShort = dayNames[d.getDay()];
-    const dayNameLong = d.toLocaleDateString('en-IN', { weekday: 'long' });
+    const { isoDate, dayOfWeekShort, dayOfWeekLong } = normalizeDate(dateStr);
+    const d = new Date(`${isoDate}T12:00:00Z`);
     const formatted = d.toLocaleDateString('en-IN', {
       day: 'numeric',
       month: 'long',
@@ -195,11 +198,11 @@ export const TrainDetailsPage: React.FC = () => {
     });
 
     const isRunning =
-      trainData.runningDays?.some((rd: string) =>
-        rd.toUpperCase().startsWith(dayNameShort.toUpperCase().slice(0, 3))
+      trainData?.runningDays?.some((rd: string) =>
+        rd.toUpperCase().startsWith(dayOfWeekShort.toUpperCase().slice(0, 3))
       ) ?? true;
 
-    return { isRunning, dayName: dayNameLong, formattedDate: formatted };
+    return { isRunning, dayName: dayOfWeekLong, formattedDate: formatted };
   };
 
   const handleDateSelect = (dateStr: string) => {

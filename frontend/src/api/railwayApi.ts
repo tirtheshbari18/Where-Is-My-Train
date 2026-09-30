@@ -17,6 +17,10 @@ export interface TrainSummary {
   distanceKm: number;
   zone?: string;
   hasPantry?: boolean;
+  platform?: string;
+  currentStatus?: string;
+  delayMinutes?: number;
+  isLive?: boolean;
 }
 
 export interface TrainStop {

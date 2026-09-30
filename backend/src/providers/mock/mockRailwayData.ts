@@ -218,6 +218,46 @@ export const MOCK_STATIONS: StationLocation[] = [
 ];
 
 export const MOCK_TRAINS: TrainDetail[] = [
+  // 19016 - Saurashtra Express (Flagship West Coast Express: Boisar 08:42 -> Dahanu Road 09:04)
+  {
+    trainNumber: '19016',
+    trainName: 'Saurashtra Express',
+    sourceCode: 'MMCT',
+    sourceName: 'Mumbai Central',
+    destinationCode: 'PBR',
+    destinationName: 'Porbandar',
+    trainType: 'Express',
+    runningDays: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+    departureTime: '06:55',
+    arrivalTime: '03:15',
+    durationMinutes: 1220,
+    distanceKm: 955,
+    zone: 'WR',
+    hasPantry: false,
+    locoType: 'WAP-4 #22510 (Vadodara)',
+    schedule: [
+      { stopSequence: 1, stationCode: 'MMCT', stationName: 'Mumbai Central', scheduledArrival: 'START', scheduledDeparture: '06:55', actualArrival: 'START', actualDeparture: '06:55', haltMinutes: 0, distanceFromSourceKm: 0, dayCount: 1, platform: '2', latitude: 18.9696, longitude: 72.8193 },
+      { stopSequence: 2, stationCode: 'DDR', stationName: 'Dadar', scheduledArrival: '07:05', scheduledDeparture: '07:07', actualArrival: '07:05', actualDeparture: '07:07', haltMinutes: 2, distanceFromSourceKm: 6, dayCount: 1, platform: '5', latitude: 19.0178, longitude: 72.8478 },
+      { stopSequence: 3, stationCode: 'BVI', stationName: 'Borivali', scheduledArrival: '07:35', scheduledDeparture: '07:38', actualArrival: '07:35', actualDeparture: '07:38', haltMinutes: 3, distanceFromSourceKm: 30, dayCount: 1, platform: '6', latitude: 19.2288, longitude: 72.8541 },
+      { stopSequence: 4, stationCode: 'PLG', stationName: 'Palghar', scheduledArrival: '08:24', scheduledDeparture: '08:26', actualArrival: '08:24', actualDeparture: '08:26', haltMinutes: 2, distanceFromSourceKm: 87, dayCount: 1, platform: '1', latitude: 19.6967, longitude: 72.7699 },
+      { stopSequence: 5, stationCode: 'BOR', stationName: 'Boisar', scheduledArrival: '08:40', scheduledDeparture: '08:42', actualArrival: '08:40', actualDeparture: '08:42', haltMinutes: 2, distanceFromSourceKm: 98, dayCount: 1, platform: '2', latitude: 19.8000, longitude: 72.7565 },
+      { stopSequence: 6, stationCode: 'VGN', stationName: 'Vangaon', scheduledArrival: '08:53', scheduledDeparture: '08:54', actualArrival: '08:53', actualDeparture: '08:54', haltMinutes: 1, distanceFromSourceKm: 107, dayCount: 1, platform: '1', latitude: 19.8822, longitude: 72.7489 },
+      { stopSequence: 7, stationCode: 'DRD', stationName: 'Dahanu Road', scheduledArrival: '09:04', scheduledDeparture: '09:06', actualArrival: '09:04', actualDeparture: '09:06', haltMinutes: 2, distanceFromSourceKm: 124, dayCount: 1, platform: '1', latitude: 19.9734, longitude: 72.7329 },
+      { stopSequence: 8, stationCode: 'GVD', stationName: 'Gholvad', scheduledArrival: '09:18', scheduledDeparture: '09:19', actualArrival: '09:18', actualDeparture: '09:19', haltMinutes: 1, distanceFromSourceKm: 135, dayCount: 1, platform: '2', latitude: 20.0768, longitude: 72.7369 },
+      { stopSequence: 9, stationCode: 'SJN', stationName: 'Sanjan', scheduledArrival: '09:32', scheduledDeparture: '09:34', actualArrival: '09:32', actualDeparture: '09:34', haltMinutes: 2, distanceFromSourceKm: 148, dayCount: 1, platform: '2', latitude: 20.2012, longitude: 72.8021 },
+      { stopSequence: 10, stationCode: 'UBR', stationName: 'Umargam Road', scheduledArrival: '09:42', scheduledDeparture: '09:43', actualArrival: '09:42', actualDeparture: '09:43', haltMinutes: 1, distanceFromSourceKm: 154, dayCount: 1, platform: '2', latitude: 20.2456, longitude: 72.8312 },
+      { stopSequence: 11, stationCode: 'BLD', stationName: 'Bhilad', scheduledArrival: '09:55', scheduledDeparture: '09:56', actualArrival: '09:55', actualDeparture: '09:56', haltMinutes: 1, distanceFromSourceKm: 160, dayCount: 1, platform: '2', latitude: 20.2834, longitude: 72.8687 },
+      { stopSequence: 12, stationCode: 'VAPI', stationName: 'Vapi', scheduledArrival: '10:10', scheduledDeparture: '10:12', actualArrival: '10:10', actualDeparture: '10:12', haltMinutes: 2, distanceFromSourceKm: 170, dayCount: 1, platform: '2', latitude: 20.3712, longitude: 72.9042 },
+      { stopSequence: 13, stationCode: 'BL', stationName: 'Valsad', scheduledArrival: '10:45', scheduledDeparture: '10:50', actualArrival: '10:45', actualDeparture: '10:50', haltMinutes: 5, distanceFromSourceKm: 195, dayCount: 1, platform: '3', latitude: 20.6094, longitude: 72.9342 },
+      { stopSequence: 14, stationCode: 'ST', stationName: 'Surat', scheduledArrival: '12:00', scheduledDeparture: '12:05', actualArrival: '12:00', actualDeparture: '12:05', haltMinutes: 5, distanceFromSourceKm: 263, dayCount: 1, platform: '1', latitude: 21.2049, longitude: 72.8408 },
+      { stopSequence: 15, stationCode: 'BH', stationName: 'Bharuch Junction', scheduledArrival: '13:00', scheduledDeparture: '13:02', actualArrival: '13:00', actualDeparture: '13:02', haltMinutes: 2, distanceFromSourceKm: 322, dayCount: 1, platform: '3', latitude: 21.7051, longitude: 72.9959 },
+      { stopSequence: 16, stationCode: 'BRC', stationName: 'Vadodara Junction', scheduledArrival: '14:15', scheduledDeparture: '14:25', actualArrival: '14:15', actualDeparture: '14:25', haltMinutes: 10, distanceFromSourceKm: 393, dayCount: 1, platform: '2', latitude: 22.3106, longitude: 73.1812 },
+      { stopSequence: 17, stationCode: 'ANND', stationName: 'Anand Junction', scheduledArrival: '15:05', scheduledDeparture: '15:07', actualArrival: '15:05', actualDeparture: '15:07', haltMinutes: 2, distanceFromSourceKm: 428, dayCount: 1, platform: '3', latitude: 22.5645, longitude: 72.9289 },
+      { stopSequence: 18, stationCode: 'ADI', stationName: 'Ahmedabad Junction', scheduledArrival: '16:45', scheduledDeparture: '17:00', actualArrival: '16:45', actualDeparture: '17:00', haltMinutes: 15, distanceFromSourceKm: 492, dayCount: 1, platform: '5', latitude: 23.0238, longitude: 72.6011 },
+      { stopSequence: 19, stationCode: 'RJT', stationName: 'Rajkot Junction', scheduledArrival: '21:15', scheduledDeparture: '21:25', actualArrival: '21:15', actualDeparture: '21:25', haltMinutes: 10, distanceFromSourceKm: 739, dayCount: 1, platform: '1', latitude: 22.3039, longitude: 70.8022 },
+      { stopSequence: 20, stationCode: 'PBR', stationName: 'Porbandar', scheduledArrival: '03:15', scheduledDeparture: 'END', actualArrival: '03:15', actualDeparture: 'END', haltMinutes: 0, distanceFromSourceKm: 955, dayCount: 2, platform: '1', latitude: 21.6417, longitude: 69.6293 },
+    ],
+  },
   // 19417 - Borivali - Vatva Express (Primary Tracking Reference Train)
   {
     trainNumber: '19417',

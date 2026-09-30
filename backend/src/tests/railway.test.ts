@@ -140,6 +140,43 @@ describe('WHERE IS MY TRAIN - Backend API Tests', () => {
       expect(res.body.to).toBe('ADI');
     });
 
+    it('should find trains between Boisar (BOR) and Dahanu Road (DRD) on 30/09/2026', async () => {
+      const res = await request(app).get('/api/trains-between?from=BOR&to=DRD&date=30/09/2026');
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.total).toBeGreaterThan(0);
+      expect(res.body.from).toBe('BOR');
+      expect(res.body.to).toBe('DRD');
+      expect(res.body.date).toBe('2026-09-30');
+
+      // Verify Saurashtra Express 19016 is returned with exact timings
+      const saurashtra = res.body.data.find((t: any) => t.trainNumber === '19016');
+      expect(saurashtra).toBeDefined();
+      expect(saurashtra.trainName).toBe('Saurashtra Express');
+      expect(saurashtra.departureTime).toBe('08:42 AM');
+      expect(saurashtra.arrivalTime).toBe('09:04 AM');
+      expect(saurashtra.durationMinutes).toBe(22);
+    });
+
+    it('should resolve station names when searched as Boisar and Dahanu Road', async () => {
+      const res = await request(app).get('/api/trains-between?from=Boisar&to=Dahanu%20Road&date=2026-09-30');
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.from).toBe('BOR');
+      expect(res.body.to).toBe('DRD');
+      expect(res.body.data.length).toBeGreaterThan(0);
+    });
+
+    it('should return live running status for Saurashtra Express 19016', async () => {
+      const res = await request(app).get('/api/trains/19016/status');
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.trainNumber).toBe('19016');
+      expect(res.body.data.lastReportedStation.code).toBe('VGN');
+      expect(res.body.data.delayMinutes).toBe(4);
+      expect(res.body.data.positionType).toBe('station');
+    });
+
     it('should fail with 400 if station codes are missing', async () => {
       const res = await request(app).get('/api/trains-between?from=MMCT');
       expect(res.status).toBe(400);
