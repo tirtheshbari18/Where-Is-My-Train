@@ -10,7 +10,9 @@ interface UserFeedback {
   submittedAt: string;
 }
 
-const feedbackStore: UserFeedback[] = [];
+// NOTE: feedback is intentionally NOT accumulated in a process-wide array.
+// Server-side global collections would leak one user's data to every other user
+// (multi-user safety) and would not survive a restart. Only a redacted audit line is logged.
 
 export class FeedbackController {
   static submitFeedback(req: Request, res: Response) {
@@ -29,7 +31,12 @@ export class FeedbackController {
       submittedAt: new Date().toISOString(),
     };
 
-    feedbackStore.unshift(item);
+    // Server-side audit log only (no personal details).
+    console.log(
+      `[Feedback] ${item.type} received at ${item.submittedAt}${
+        typeof item.rating === 'number' ? ` rating=${item.rating}` : ''
+      }`
+    );
 
     res.json({
       success: true,

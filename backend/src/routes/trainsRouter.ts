@@ -25,6 +25,10 @@ router.get('/:number/coaches', TrainsController.getCoaches);
 // Intermediate stations along route
 router.get('/:number/intermediate', TrainsController.getIntermediateStations);
 
+// Segment timeline — stops between two stations for a train
+// GET /api/trains/:number/segment?from=BOR&to=DRD
+router.get('/:number/segment', TrainsController.getSegment);
+
 // Train operational interactions (crossings, overtakings)
 router.get('/:number/operations', TrainsController.getTrainOperations);
 

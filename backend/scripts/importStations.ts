@@ -19,8 +19,8 @@ export function importStations(data: MasterStation[] = MASTER_STATIONS) {
   };
 
   for (const stn of data) {
-    // 1. Station code format check (2-5 uppercase letters)
-    if (!stn.station_code || !/^[A-Z0-9]{2,6}$/.test(stn.station_code)) {
+    // 1. Station code format check (1-6 uppercase letters/digits)
+    if (!stn.station_code || !/^[A-Z0-9]{1,6}$/.test(stn.station_code)) {
       report.invalid++;
       report.errors.push(`Invalid station code format: ${stn.station_code}`);
       continue;

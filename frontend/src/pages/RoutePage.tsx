@@ -16,6 +16,7 @@ export const RoutePage: React.FC = () => {
   const [availableRoutes, setAvailableRoutes] = useState<any[]>([]);
   const [selectedRouteCode, setSelectedRouteCode] = useState<string>(id || 'MMCT_ADI_CORRIDOR');
   const [routeDetail, setRouteDetail] = useState<RailwayRouteDetail | null>(null);
+  const [routeError, setRouteError] = useState<string | null>(null);
   const [isReversed, setIsReversed] = useState(false);
   const [loading, setLoading] = useState(true);
 
@@ -24,23 +25,38 @@ export const RoutePage: React.FC = () => {
   const [toCode, setToCode] = useState<string>('DRD');
 
   useEffect(() => {
+    let stale = false;
     railwayApi.getRoutes().then((routes) => {
-      setAvailableRoutes(routes);
+      if (!stale) setAvailableRoutes(routes);
     }).catch(console.warn);
+    return () => {
+      stale = true;
+    };
   }, []);
 
   useEffect(() => {
     const codeToFetch = id || selectedRouteCode;
+    let stale = false;
     setLoading(true);
+    setRouteError(null);
     railwayApi.getRoute(codeToFetch)
       .then((data) => {
+        if (stale) return;
         setRouteDetail(data);
         setSelectedRouteCode(data.route_code);
       })
       .catch((err) => {
+        if (stale) return;
         console.error('Failed to load route:', err);
+        setRouteDetail(null);
+        setRouteError('This route could not be loaded right now. Please try again.');
       })
-      .finally(() => setLoading(false));
+      .finally(() => {
+        if (!stale) setLoading(false);
+      });
+    return () => {
+      stale = true;
+    };
   }, [id, selectedRouteCode]);
 
   const handleRouteChange = (code: string) => {
@@ -204,6 +220,10 @@ export const RoutePage: React.FC = () => {
           <div className="py-12 flex flex-col items-center justify-center gap-2 text-blue-600">
             <Loader2 className="w-8 h-8 animate-spin" />
             <span className="text-xs font-bold">Rendering railway track sequence...</span>
+          </div>
+        ) : !routeDetail ? (
+          <div className="py-10 text-center text-xs text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-2xl">
+            {routeError || 'No route data available for this selection.'}
           </div>
         ) : (
           <div className="relative pl-6 sm:pl-8 space-y-6">

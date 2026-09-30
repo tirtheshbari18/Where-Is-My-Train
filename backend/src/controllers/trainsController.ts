@@ -276,8 +276,8 @@ export class TrainsController {
         trainNumber: number,
         stationCode,
         stationName: stationName || stationCode,
-        oldPlatform: oldPlatform || '1',
-        newPlatform,
+        oldPlatform: oldPlatform ? String(oldPlatform).trim() : '',
+        newPlatform: String(newPlatform).trim(),
         source: source || 'User Announcement',
         isOfficial: false,
       });
@@ -330,6 +330,51 @@ export class TrainsController {
       res.json({
         success: true,
         data: mapData,
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  /**
+   * GET /api/trains/:number/segment?from=BOR&to=DRD
+   * Returns all stops between from and to for the given train.
+   * Implements the interactive segment timeline feature.
+   */
+  static async getSegment(req: Request, res: Response, next: NextFunction) {
+    try {
+      const number = req.params.number as string;
+      const from = (req.query.from as string || '').toUpperCase().trim();
+      const to = (req.query.to as string || '').toUpperCase().trim();
+
+      if (!from || !to) {
+        return res.status(400).json({
+          success: false,
+          error: {
+            message: 'Both "from" and "to" station codes are required for segment query.',
+            code: 'MISSING_SEGMENT_PARAMS',
+          },
+        });
+      }
+
+      if (from === to) {
+        return res.status(400).json({
+          success: false,
+          error: {
+            message: 'Source and destination stations cannot be the same.',
+            code: 'SAME_STATION',
+          },
+        });
+      }
+
+      const result = await railwayService.getTrainSegment(number, from, to);
+
+      res.json({
+        success: true,
+        data: result,
+        trainNumber: number,
+        from,
+        to,
       });
     } catch (err) {
       next(err);

@@ -16,6 +16,7 @@ import {
   Users,
 } from 'lucide-react';
 import { ticketService, SavedTicket } from '../services/ticketService.js';
+import { TicketBookingCard } from '../components/tickets/TicketBookingCard.js';
 
 export const TicketsPage: React.FC = () => {
   const [tickets, setTickets] = useState<SavedTicket[]>([]);
@@ -118,26 +119,30 @@ export const TicketsPage: React.FC = () => {
   };
 
   return (
-    <div className="max-w-4xl mx-auto px-4 py-6 pb-24">
-      {/* Page Header */}
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-black text-slate-900 dark:text-white flex items-center gap-2">
-            <TicketIcon className="w-7 h-7 text-blue-600 dark:text-blue-400" />
-            My Saved Tickets
-          </h1>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-            Access offline tickets, booking details, and journey credentials
-          </p>
+    <div className="max-w-4xl mx-auto px-4 py-6 pb-24 space-y-6">
+      {/* 1. Ticket Booking on Confirmtkt (Section 20 & 21) */}
+      <TicketBookingCard />
+
+      {/* 2. Saved Offline Tickets Section */}
+      <div className="space-y-4 pt-2">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-xl font-black text-slate-900 dark:text-white flex items-center gap-2">
+              <TicketIcon className="w-6 h-6 text-blue-600 dark:text-blue-400" />
+              <span>My Saved Tickets</span>
+            </h2>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+              Access offline tickets, booking details, and journey credentials
+            </p>
+          </div>
+          <button
+            onClick={() => setShowAddModal(true)}
+            className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-xl text-xs shadow-sm transition active:scale-95"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Add Ticket</span>
+          </button>
         </div>
-        <button
-          onClick={() => setShowAddModal(true)}
-          className="flex items-center gap-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs shadow-md transition active:scale-95"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Save Ticket</span>
-        </button>
-      </div>
 
       {/* Tickets List */}
       {tickets.length === 0 ? (
@@ -172,9 +177,16 @@ export const TicketsPage: React.FC = () => {
                     {t.trainName}
                   </span>
                 </div>
-                <div className="flex items-center gap-1 text-[11px] bg-emerald-500/20 text-emerald-200 font-bold px-2 py-0.5 rounded border border-emerald-400/30">
-                  <CheckCircle2 className="w-3 h-3 text-emerald-400" />
-                  <span>{t.status}</span>
+                <div className="flex items-center gap-1.5">
+                  {t.isDemo && (
+                    <span className="text-[10px] font-black uppercase tracking-wider bg-amber-500 text-slate-950 px-2 py-0.5 rounded">
+                      Demo
+                    </span>
+                  )}
+                  <div className="flex items-center gap-1 text-[11px] bg-emerald-500/20 text-emerald-200 font-bold px-2 py-0.5 rounded border border-emerald-400/30">
+                    <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                    <span>{t.status}</span>
+                  </div>
                 </div>
               </div>
 
@@ -199,7 +211,7 @@ export const TicketsPage: React.FC = () => {
                     <div className="text-lg font-black text-slate-900 dark:text-white">{t.sourceCode}</div>
                     <div className="text-xs text-slate-600 dark:text-slate-400 truncate">{t.sourceName}</div>
                     <div className="text-[11px] text-emerald-600 dark:text-emerald-400 font-semibold mt-0.5 flex items-center gap-1">
-                      <Clock className="w-3 h-3" /> {t.departureTime}
+                      <Clock className="w-3 h-3" /> {t.departureTime || 'Time not available'}
                     </div>
                   </div>
 
@@ -219,7 +231,7 @@ export const TicketsPage: React.FC = () => {
                     <div className="text-lg font-black text-slate-900 dark:text-white">{t.destinationCode}</div>
                     <div className="text-xs text-slate-600 dark:text-slate-400 truncate">{t.destinationName}</div>
                     <div className="text-[11px] text-blue-600 dark:text-blue-400 font-semibold mt-0.5">
-                      {t.arrivalTime}
+                      {t.arrivalTime || 'Time not available'}
                     </div>
                   </div>
                 </div>
@@ -260,6 +272,7 @@ export const TicketsPage: React.FC = () => {
           ))}
         </div>
       )}
+      </div>
 
       {/* Ticket Details Modal */}
       {selectedTicket && (
@@ -316,7 +329,7 @@ export const TicketsPage: React.FC = () => {
                     <div className="font-black text-lg text-slate-900 dark:text-white">{selectedTicket.sourceCode}</div>
                     <div className="text-xs text-slate-600 dark:text-slate-400">{selectedTicket.sourceName}</div>
                     <div className="text-xs font-bold text-emerald-600 dark:text-emerald-400 mt-0.5">
-                      Dep: {selectedTicket.departureTime}
+                      Dep: {selectedTicket.departureTime || 'Not available'}
                     </div>
                   </div>
                   <div className="text-center px-4">
@@ -327,7 +340,7 @@ export const TicketsPage: React.FC = () => {
                     <div className="font-black text-lg text-slate-900 dark:text-white">{selectedTicket.destinationCode}</div>
                     <div className="text-xs text-slate-600 dark:text-slate-400">{selectedTicket.destinationName}</div>
                     <div className="text-xs font-bold text-blue-600 dark:text-blue-400 mt-0.5">
-                      Arr: {selectedTicket.arrivalTime}
+                      Arr: {selectedTicket.arrivalTime || 'Not available'}
                     </div>
                   </div>
                 </div>
@@ -343,9 +356,13 @@ export const TicketsPage: React.FC = () => {
                     <div key={idx} className="p-3 flex items-center justify-between text-xs">
                       <div>
                         <div className="font-bold text-slate-800 dark:text-slate-200">
-                          {p.name} ({p.age}, {p.gender})
+                          {p.name}
+                          {p.age ? ` (${p.age}, ${p.gender})` : ''}
                         </div>
-                        <div className="text-slate-500">Coach: <span className="font-semibold text-blue-600 dark:text-blue-400">{p.coach}</span> | Berth: <span className="font-semibold">{p.berth}</span></div>
+                        <div className="text-slate-500">
+                          Coach: <span className="font-semibold text-blue-600 dark:text-blue-400">{p.coach || 'Not available'}</span> | Berth:{' '}
+                          <span className="font-semibold">{p.berth || 'Not available'}</span>
+                        </div>
                       </div>
                       <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300">
                         {p.status}
@@ -358,7 +375,9 @@ export const TicketsPage: React.FC = () => {
               {/* Fare */}
               <div className="flex items-center justify-between text-xs p-3 bg-slate-50 dark:bg-slate-800/40 rounded-xl">
                 <span className="font-medium text-slate-600 dark:text-slate-400">Total Fare Paid</span>
-                <span className="font-black text-base text-slate-900 dark:text-white">₹{selectedTicket.fare}</span>
+                <span className="font-black text-base text-slate-900 dark:text-white">
+                  {typeof selectedTicket.fare === 'number' ? `₹${selectedTicket.fare}` : 'Not available'}
+                </span>
               </div>
 
               {/* Actions */}

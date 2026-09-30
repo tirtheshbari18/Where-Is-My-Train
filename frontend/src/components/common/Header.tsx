@@ -10,6 +10,8 @@ import {
   MapPin,
   Bus,
   ChevronDown,
+  Zap,
+  Navigation,
 } from 'lucide-react';
 import { useTheme } from '../../context/ThemeContext.js';
 import { SideDrawer } from './SideDrawer.js';
@@ -44,10 +46,10 @@ export const Header: React.FC = () => {
   };
 
   const modes = [
-    { id: 'express', label: 'EXPRESS', icon: Train },
-    { id: 'locals', label: 'LOCALS', icon: Train },
-    { id: 'metro', label: 'METRO', icon: Train },
-    { id: 'bus', label: 'BUS', icon: Bus },
+    { id: 'express', label: 'EXPRESS', icon: Train, color: 'text-amber-300' },
+    { id: 'locals', label: 'LOCALS', icon: Zap, color: 'text-emerald-300' },
+    { id: 'metro', label: 'METRO', icon: Navigation, color: 'text-sky-300' },
+    { id: 'bus', label: 'BUS', icon: Bus, color: 'text-rose-300' },
   ];
 
   return (
@@ -137,12 +139,17 @@ export const Header: React.FC = () => {
                   onClick={() => handleModeChange(m.id)}
                   className={`flex items-center gap-1.5 py-2.5 px-3 sm:px-4 text-xs font-black tracking-wider uppercase transition-all border-b-2 whitespace-nowrap ${
                     isSelected
-                      ? 'border-amber-300 text-amber-300 bg-white/5'
-                      : 'border-transparent text-blue-100/80 dark:text-slate-400 hover:text-white hover:border-blue-300/40'
+                      ? `border-amber-300 ${m.color} bg-white/8`
+                      : 'border-transparent text-blue-100/70 dark:text-slate-500 hover:text-white hover:border-blue-300/30'
                   }`}
+                  aria-pressed={isSelected}
+                  aria-label={`Switch to ${m.label} mode`}
                 >
-                  <Icon className={`w-3.5 h-3.5 ${isSelected ? 'stroke-[2.5px]' : 'stroke-2'}`} />
+                  <Icon className={`w-3.5 h-3.5 ${isSelected ? 'stroke-[2.5px]' : 'stroke-[1.8px]'}`} />
                   <span>{m.label}</span>
+                  {isSelected && (
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-300 animate-pulse ml-0.5" />
+                  )}
                 </button>
               );
             })}

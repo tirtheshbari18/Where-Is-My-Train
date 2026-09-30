@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { MOCK_LOCAL_TRAINS, MUMBAI_LOCAL_LINES, LocalStationIndicatorTrain } from '../providers/mock/mockLocalData.js';
+import { matchesCategory } from '../utils/trainCategory.js';
 
 export class LocalsController {
   static getLines(_req: Request, res: Response) {
@@ -15,8 +16,10 @@ export class LocalsController {
       results = results.filter((t) => t.line.toLowerCase() === line.toLowerCase());
     }
 
-    if (type && type !== 'All') {
-      results = results.filter((t) => t.type.toLowerCase() === type.toLowerCase());
+    // Single shared category rule (mirrors frontend/src/utils/trainCategory.ts).
+    // Handles the 'All' sentinel and grouped pills (Local / Express / Superfast / Shatabdi).
+    if (type) {
+      results = results.filter((t) => matchesCategory(t.type, type));
     }
 
     if (from && to) {

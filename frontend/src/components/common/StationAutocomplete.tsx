@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { MapPin, X } from 'lucide-react';
 import { stationService } from '../../services/stationService.js';
 import { StationLocation } from '../../api/railwayApi.js';
+import { useRequestGuard } from '../../hooks/useRequestGuard.js';
 
 interface StationAutocompleteProps {
   value: string; // Station code
@@ -24,32 +25,61 @@ export const StationAutocomplete: React.FC<StationAutocompleteProps> = ({
   const [highlightIndex, setHighlightIndex] = useState(-1);
   const containerRef = useRef<HTMLDivElement>(null);
 
+  // Debounced + versioned station search: only the latest keystroke may update the list.
+  const searchGuard = useRequestGuard();
+  // Separate guard for external `value` -> input text synchronisation.
+  const syncGuard = useRequestGuard();
+  const debounceRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (debounceRef.current) window.clearTimeout(debounceRef.current);
+      searchGuard.invalidate();
+      syncGuard.invalidate();
+    };
+  }, []);
+
   // Sync internal input when external value prop changes
   useEffect(() => {
-    if (value) {
-      stationService.getStation(value).then((stn) => {
-        if (stn) {
-          setInputText(`${stn.name} (${stn.code})`);
-        } else {
-          setInputText(value);
-        }
-      });
-    } else {
+    if (!value) {
       setInputText('');
+      return;
     }
+    const requestId = syncGuard.next();
+    stationService
+      .getStation(value)
+      .then((stn) => {
+        if (!syncGuard.isCurrent(requestId)) return;
+        setInputText(stn ? `${stn.name} (${stn.code})` : value);
+      })
+      .catch(() => {
+        if (syncGuard.isCurrent(requestId)) setInputText(value);
+      });
   }, [value]);
 
-  // Handle typing and fetch suggestions
-  const handleInputChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Handle typing and fetch suggestions (debounced, race-safe)
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const text = e.target.value;
     setInputText(text);
     setHighlightIndex(-1);
 
+    if (debounceRef.current) window.clearTimeout(debounceRef.current);
+
     if (text.trim().length >= 1) {
-      const results = await stationService.searchStations(text);
-      setSuggestions(results.slice(0, 8));
-      setIsOpen(true);
+      debounceRef.current = window.setTimeout(async () => {
+        const requestId = searchGuard.next();
+        try {
+          const results = await stationService.searchStations(text);
+          if (!searchGuard.isCurrent(requestId)) return;
+          setSuggestions(results.slice(0, 8));
+          setIsOpen(true);
+        } catch {
+          if (!searchGuard.isCurrent(requestId)) return;
+          setSuggestions([]);
+        }
+      }, 200);
     } else {
+      searchGuard.invalidate();
       setSuggestions([]);
       setIsOpen(false);
     }
@@ -114,10 +144,17 @@ export const StationAutocomplete: React.FC<StationAutocompleteProps> = ({
           onChange={handleInputChange}
           onFocus={() => {
             if (inputText.trim()) {
-              stationService.searchStations(inputText).then((res) => {
-                setSuggestions(res.slice(0, 8));
-                setIsOpen(true);
-              });
+              const requestId = searchGuard.next();
+              stationService
+                .searchStations(inputText)
+                .then((res) => {
+                  if (!searchGuard.isCurrent(requestId)) return;
+                  setSuggestions(res.slice(0, 8));
+                  setIsOpen(true);
+                })
+                .catch(() => {
+                  /* keep current suggestions on failure */
+                });
             } else {
               setSuggestions(stationService.getPopularStations().slice(0, 8));
               setIsOpen(true);
@@ -158,7 +195,8 @@ export const StationAutocomplete: React.FC<StationAutocompleteProps> = ({
                     {stn.name}
                   </div>
                   <div className="text-[11px] text-slate-400 mt-0.5">
-                    {stn.state ? `${stn.state} &bull; ` : ''}Zone: {stn.zone || 'IR'}
+                    {stn.state ? `${stn.state} &bull; ` : ''}
+                    {stn.zone ? `Zone: ${stn.zone}` : 'Zone: Not available'}
                   </div>
                 </div>
                 <div className="text-right">

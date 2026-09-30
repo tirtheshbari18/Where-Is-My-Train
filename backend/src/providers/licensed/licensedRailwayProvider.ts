@@ -154,4 +154,12 @@ export class LicensedRailwayProvider implements IRailwayDataProvider {
   ): Promise<import('../../types/railway.types.js').DetailedTimetableRow[]> {
     throw new Error('Licensed provider requires active API key');
   }
+
+  async getTrainSegment(
+    _trainNumber: string,
+    _fromCode: string,
+    _toCode: string
+  ): Promise<import('../../types/railway.types.js').TrainSegmentResult> {
+    throw new Error('Licensed provider requires active API key');
+  }
 }

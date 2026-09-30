@@ -227,9 +227,10 @@ NTES_API_KEY=
 LICENSED_PROVIDER_BASE_URL=https://partner.railwayapi.example.com
 LICENSED_PROVIDER_API_KEY=
 
-# Security
-JWT_SECRET=super_secret_railway_jwt_key_change_in_production
-ADMIN_API_KEY=wimt_admin_secret_key_2026
+# Security — generate your own values; never commit real secrets
+#   e.g.  node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+JWT_SECRET=
+ADMIN_API_KEY=
 ```
 
 ---

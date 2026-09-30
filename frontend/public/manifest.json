@@ -1,16 +1,43 @@
 {
   "name": "Where Is My Train",
   "short_name": "WhereIsMyTrain",
-  "description": "Original Indian Railway Live Train Status & Route Tracking Platform",
+  "description": "Live Indian Railway Train Status, Platform Tracking, Local Trains, Metro & Bus",
   "start_url": "/",
   "display": "standalone",
+  "orientation": "portrait-primary",
   "background_color": "#0B192C",
-  "theme_color": "#1E3E62",
+  "theme_color": "#0A58CA",
+  "categories": ["travel", "navigation", "utilities"],
+  "lang": "en-IN",
   "icons": [
     {
       "src": "/train-icon.svg",
-      "sizes": "192x192 512x512",
-      "type": "image/svg+xml"
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/train-icon.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
     }
-  ]
+  ],
+  "shortcuts": [
+    {
+      "name": "Track Train",
+      "short_name": "Track",
+      "description": "Search for a train by number or name",
+      "url": "/search",
+      "icons": [{ "src": "/train-icon.svg", "sizes": "96x96" }]
+    },
+    {
+      "name": "Check PNR",
+      "short_name": "PNR",
+      "description": "Check your PNR status",
+      "url": "/pnr",
+      "icons": [{ "src": "/train-icon.svg", "sizes": "96x96" }]
+    }
+  ],
+  "screenshots": []
 }

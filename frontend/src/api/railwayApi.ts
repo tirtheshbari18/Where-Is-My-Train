@@ -29,6 +29,9 @@ export interface TrainStop {
   distanceFromSourceKm: number;
   dayCount: number;
   platform?: string;
+  platform_number?: string;
+  is_stop?: boolean;
+  sequence_number?: number;
   actualArrival?: string;
   actualDeparture?: string;
   latitude: number;
@@ -328,11 +331,102 @@ export interface PnrStatus {
   notice: string;
 }
 
+/** Result of GET /api/trains/:number/segment?from=&to= */
+export interface TrainSegmentResult {
+  trainNumber: string;
+  trainName: string;
+  fromStation: {
+    code: string;
+    name: string;
+    scheduledDeparture: string;
+    distanceFromSourceKm: number;
+    platform?: string;
+  };
+  toStation: {
+    code: string;
+    name: string;
+    scheduledArrival: string;
+    distanceFromSourceKm: number;
+    platform?: string;
+  };
+  journeyDistanceKm: number;
+  journeyDurationMinutes: number;
+  intermediateStops: TrainStop[];
+  hasIntermediateStops: boolean;
+  message?: string;
+}
+
+/**
+ * Admin credentials are NEVER bundled into the frontend.
+ * The key is only sent when the operator has entered it at runtime (Admin page),
+ * and production refuses admin access entirely when the server has no ADMIN_API_KEY.
+ */
+const ADMIN_KEY_STORAGE_KEY = 'wimt_admin_api_key';
+
+export function getAdminKey(): string {
+  try {
+    return window.localStorage.getItem(ADMIN_KEY_STORAGE_KEY) || '';
+  } catch {
+    return '';
+  }
+}
+
+export function setAdminKey(key: string): void {
+  try {
+    if (key) window.localStorage.setItem(ADMIN_KEY_STORAGE_KEY, key);
+    else window.localStorage.removeItem(ADMIN_KEY_STORAGE_KEY);
+  } catch {
+    /* storage unavailable */
+  }
+}
+
+/** Turn any failed response into a short, human-readable message (never a stack trace). */
+function toFriendlyError(status: number, json: any): string {
+  const serverMsg =
+    typeof json?.error === 'string'
+      ? json.error
+      : typeof json?.error?.message === 'string'
+      ? json.error.message
+      : typeof json?.message === 'string'
+      ? json.message
+      : null;
+  if (serverMsg && serverMsg.length <= 200 && !/[A-Za-z]:\\|node_modules|Error: /.test(serverMsg)) {
+    return serverMsg;
+  }
+  if (status === 401 || status === 403) return 'You are not authorised to perform this action.';
+  if (status === 404) return 'The requested railway data was not found.';
+  if (status === 429) return 'Too many requests. Please wait a moment and try again.';
+  if (status === 503) return 'Live data is currently unavailable.';
+  if (status >= 500) return 'Unable to load live data. Please try again shortly.';
+  return `Request failed (status ${status}).`;
+}
+
 async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(url, options);
-  const json = await res.json();
+  const headers: Record<string, string> = {
+    ...((options?.headers as Record<string, string>) || {}),
+  };
+  const adminKey = getAdminKey();
+  if (adminKey) headers['x-admin-key'] = adminKey;
+
+  let res: Response;
+  try {
+    res = await fetch(url, { ...options, headers });
+  } catch {
+    throw new Error('Unable to reach the server. Please check your connection and try again.');
+  }
+
+  let json: any = null;
+  try {
+    json = await res.json();
+  } catch {
+    json = null;
+  }
+
   if (!res.ok) {
-    throw new Error(json.error?.message || `Request failed with status ${res.status}`);
+    throw new Error(toFriendlyError(res.status, json));
+  }
+  if (json === null) {
+    throw new Error('Received an invalid response from the server.');
   }
   return json;
 }
@@ -624,6 +718,119 @@ export const railwayApi = {
 
   async getDataVersion(): Promise<any> {
     const res = await fetchJson<{ success: boolean; data: any }>(`${API_BASE}/data-version`);
+    return res.data;
+  },
+
+  async getAdminMasterSummary(): Promise<any> {
+    const res = await fetchJson<{ success: boolean; data: any }>(`${API_BASE}/admin/master-summary`);
+    return res.data;
+  },
+
+  async getAdminStations(params: {
+    page?: number;
+    limit?: number;
+    search?: string;
+    zone?: string;
+  }): Promise<{
+    success: boolean;
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+    data: any[];
+  }> {
+    const q = new URLSearchParams();
+    if (params.page) q.set('page', String(params.page));
+    if (params.limit) q.set('limit', String(params.limit));
+    if (params.search) q.set('search', params.search);
+    if (params.zone && params.zone !== 'ALL') q.set('zone', params.zone);
+    const res = await fetchJson<any>(`${API_BASE}/admin/stations?${q.toString()}`);
+    return res;
+  },
+
+  async addAdminStation(station: any): Promise<any> {
+    const res = await fetchJson<any>(`${API_BASE}/admin/stations`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(station),
+    });
+    return res;
+  },
+
+  async updateAdminStation(code: string, updates: any): Promise<any> {
+    const res = await fetchJson<any>(`${API_BASE}/admin/stations/${encodeURIComponent(code)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updates),
+    });
+    return res;
+  },
+
+  async deleteAdminStation(code: string): Promise<any> {
+    const res = await fetchJson<any>(`${API_BASE}/admin/stations/${encodeURIComponent(code)}`, {
+      method: 'DELETE',
+    });
+    return res;
+  },
+
+  async verifyAdminStation(code: string, verified_by?: string): Promise<any> {
+    const res = await fetchJson<any>(
+      `${API_BASE}/admin/stations/${encodeURIComponent(code)}/verify`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ verified_by }),
+      }
+    );
+    return res;
+  },
+
+  async getAdminPlatforms(station_code?: string): Promise<any[]> {
+    const q = station_code ? `?station_code=${encodeURIComponent(station_code)}` : '';
+    const res = await fetchJson<{ success: boolean; data: any[] }>(`${API_BASE}/admin/platforms${q}`);
+    return res.data;
+  },
+
+  async addAdminPlatform(platform: any): Promise<any> {
+    const res = await fetchJson<any>(`${API_BASE}/admin/platforms`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(platform),
+    });
+    return res;
+  },
+
+  async importAdminDataset(type: string, payload: any): Promise<any> {
+    const res = await fetchJson<any>(`${API_BASE}/admin/import`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type, payload }),
+    });
+    return res;
+  },
+
+  async exportAdminDataset(): Promise<any> {
+    const res = await fetchJson<any>(`${API_BASE}/admin/export`);
+    return res;
+  },
+
+  async getDataQualityReport(): Promise<any> {
+    const res = await fetchJson<{ success: boolean; data: any }>(`${API_BASE}/data-quality-report`);
+    return res.data;
+  },
+
+  /**
+   * Get intermediate stops for a train between two stations.
+   * Corresponds to GET /api/trains/:number/segment?from=&to=
+   */
+  async getTrainSegment(
+    trainNumber: string,
+    from: string,
+    to: string
+  ): Promise<TrainSegmentResult> {
+    const res = await fetchJson<{ success: boolean; data: TrainSegmentResult }>(
+      `${API_BASE}/trains/${encodeURIComponent(trainNumber)}/segment?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`
+    );
     return res.data;
   },
 };

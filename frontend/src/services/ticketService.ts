@@ -10,21 +10,25 @@ export interface SavedTicket {
   destinationCode: string;
   destinationName: string;
   journeyDate: string;
-  departureTime: string;
-  arrivalTime: string;
+  /** Optional: only present when the source actually supplied a time */
+  departureTime?: string;
+  arrivalTime?: string;
   passengerCount: number;
   passengers: Array<{
     name: string;
-    age: number;
-    gender: 'M' | 'F';
-    coach: string;
-    berth: string;
+    age?: number;
+    gender?: 'M' | 'F';
+    coach?: string;
+    berth?: string;
     status: string;
   }>;
-  fare: number;
+  /** Optional: only present when the source actually supplied a fare */
+  fare?: number;
   classType: string;
   status: 'CONFIRMED' | 'RAC' | 'WAITLISTED';
   bookedAt: string;
+  /** true for the bundled sample tickets so they are never mistaken for real bookings */
+  isDemo?: boolean;
 }
 
 const STORAGE_KEY = 'wimt_saved_tickets';
@@ -51,6 +55,7 @@ const DEFAULT_TICKETS: SavedTicket[] = [
     fare: 540,
     classType: 'Sleeper (SL)',
     status: 'CONFIRMED',
+    isDemo: true,
     bookedAt: new Date(Date.now() - 86400000 * 2).toISOString(),
   },
   {
@@ -73,6 +78,7 @@ const DEFAULT_TICKETS: SavedTicket[] = [
     fare: 10,
     classType: 'Second Class (II)',
     status: 'CONFIRMED',
+    isDemo: true,
     bookedAt: new Date(Date.now() - 3600000 * 4).toISOString(),
   },
   {
@@ -95,6 +101,7 @@ const DEFAULT_TICKETS: SavedTicket[] = [
     fare: 285,
     classType: 'AC Chair Car (CC)',
     status: 'CONFIRMED',
+    isDemo: true,
     bookedAt: new Date(Date.now() - 86400000 * 5).toISOString(),
   },
 ];

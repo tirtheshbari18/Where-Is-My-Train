@@ -3,9 +3,12 @@ import { Train, ArrowUpDown, Clock } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { localService, LocalTrainItem, LocalStationIndicatorTrain } from '../../services/localService.js';
 import { formatTimeWithAmPm } from '../../utils/timeFormat.js';
+import { useRequestGuard } from '../../hooks/useRequestGuard.js';
 
 export const LocalsView: React.FC = () => {
   const navigate = useNavigate();
+  const searchGuard = useRequestGuard();
+  const indicatorGuard = useRequestGuard();
 
   // Search states
   const [fromStation, setFromStation] = useState('BOR');
@@ -26,26 +29,30 @@ export const LocalsView: React.FC = () => {
   }, []);
 
   const handleSearch = async () => {
+    const reqId = searchGuard.next();
     setIsSearching(true);
     try {
       const data = await localService.searchLocals(fromStation, toStation, selectedLine, speedFilter);
+      if (!searchGuard.isCurrent(reqId)) return;
       setResults(data);
     } catch {
       // ignore
     } finally {
-      setIsSearching(false);
+      if (searchGuard.isCurrent(reqId)) setIsSearching(false);
     }
   };
 
   const loadStationIndicator = async (stn: string) => {
+    const reqId = indicatorGuard.next();
     setIndicatorLoading(true);
     try {
       const data = await localService.getStationIndicator(stn);
+      if (!indicatorGuard.isCurrent(reqId)) return;
       setIndicatorTrains(data);
     } catch {
       // ignore
     } finally {
-      setIndicatorLoading(false);
+      if (indicatorGuard.isCurrent(reqId)) setIndicatorLoading(false);
     }
   };
 

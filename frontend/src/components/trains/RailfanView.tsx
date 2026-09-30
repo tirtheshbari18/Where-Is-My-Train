@@ -45,10 +45,10 @@ export const RailfanView: React.FC<Props> = ({ train, status }) => {
             <Zap className="w-4 h-4 text-amber-400" />
           </div>
           <div className="text-lg font-bold text-white font-mono">
-            {status.locoNumber || 'WAP-7 / EMU'}
+            {status.locoNumber || 'Not available'}
           </div>
           <div className="text-xs text-slate-400 mt-1">
-            {train.locoType || 'Standard 25kV AC Traction'}
+            {train.locoType || 'Not available'}
           </div>
         </div>
 
@@ -59,11 +59,17 @@ export const RailfanView: React.FC<Props> = ({ train, status }) => {
             <Gauge className="w-4 h-4 text-emerald-400" />
           </div>
           <div className="text-lg font-bold text-emerald-400 font-mono flex items-baseline gap-1">
-            <span>{status.speedKmH ? `${status.speedKmH}` : 'Stationary'}</span>
-            <span className="text-xs text-slate-400 font-normal">km/h</span>
+            {status.speedKmH ? (
+              <>
+                <span>{status.speedKmH}</span>
+                <span className="text-xs text-slate-400 font-normal">km/h</span>
+              </>
+            ) : (
+              <span className="text-sm text-slate-400">Not available</span>
+            )}
           </div>
           <div className="text-[11px] text-slate-400 mt-1">
-            Max Permissible Track Speed: 130 km/h
+            {status.speedKmH ? 'As reported by data provider' : 'Speed telemetry unavailable'}
           </div>
         </div>
 
@@ -74,10 +80,10 @@ export const RailfanView: React.FC<Props> = ({ train, status }) => {
             <Compass className="w-4 h-4 text-blue-400" />
           </div>
           <div className="text-lg font-bold text-white">
-            {train.zone || 'WR'} Railway
+            {train.zone ? `${train.zone} Railway` : 'Not available'}
           </div>
           <div className="text-xs text-slate-400 mt-1">
-            Division: Vadodara / Mumbai Central
+            Division: Not available
           </div>
         </div>
 
@@ -123,7 +129,7 @@ export const RailfanView: React.FC<Props> = ({ train, status }) => {
               {status.lastReportedStation?.name || 'Section Transit'}
             </span>
             <span className="text-[11px] text-amber-400 block mt-1">
-              • Running with +{status.delayMinutes} min delay
+              • {status.delayMinutes > 0 ? `Running with +${status.delayMinutes} min delay` : 'No delay reported'}
             </span>
           </div>
 
@@ -146,7 +152,7 @@ export const RailfanView: React.FC<Props> = ({ train, status }) => {
             if (navigator.share) {
               navigator.share({
                 title: `${train.trainNumber} ${train.trainName} Status`,
-                text: `Live tracking ${train.trainNumber} ${train.trainName}: currently at ${status.lastReportedStation?.name || 'en-route'}, delay: +${status.delayMinutes} mins. Track on Where Is My Train!`,
+                text: `Live tracking ${train.trainNumber} ${train.trainName}: currently at ${status.lastReportedStation?.name || 'en-route'}, delay: ${status.delayMinutes > 0 ? `+${status.delayMinutes} mins` : 'none'}. Track on Where Is My Train!`,
                 url: window.location.href,
               });
             } else {

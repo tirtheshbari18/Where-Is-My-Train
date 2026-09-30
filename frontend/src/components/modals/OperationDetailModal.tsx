@@ -173,10 +173,10 @@ export const OperationDetailModal: React.FC<OperationDetailModalProps> = ({
                 <span>Platform & Line</span>
               </span>
               <p className="font-black text-amber-600 dark:text-amber-400 text-sm mt-0.5">
-                Platform {operation.platform || 'Loop Line'}
+                {operation.platform ? `Platform ${operation.platform}` : 'Platform not announced'}
               </p>
               <span className="text-[10px] font-semibold text-slate-500 dark:text-slate-400">
-                Direction: {operation.direction || 'UP Mainline'}
+                {operation.direction ? `Direction: ${operation.direction}` : 'Direction: Not specified'}
               </span>
             </div>
           </div>

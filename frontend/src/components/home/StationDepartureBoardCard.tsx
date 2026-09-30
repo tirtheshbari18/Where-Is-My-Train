@@ -3,6 +3,7 @@ import { Clock } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { railwayApi, LiveStationBoard } from '../../api/railwayApi.js';
 import { StationAutocomplete } from '../common/StationAutocomplete.js';
+import { useRequestGuard } from '../../hooks/useRequestGuard.js';
 
 interface StationDepartureBoardCardProps {
   defaultStation?: string;
@@ -13,92 +14,30 @@ export const StationDepartureBoardCard: React.FC<StationDepartureBoardCardProps>
   const [stationCode, setStationCode] = useState(defaultStation);
   const [board, setBoard] = useState<LiveStationBoard | null>(null);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState<'time' | 'delay' | 'platform'>('time');
+  const guard = useRequestGuard();
 
   useEffect(() => {
     fetchDepartures(stationCode);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stationCode]);
 
   const fetchDepartures = async (code: string) => {
+    const reqId = guard.next();
     setLoading(true);
+    setError(null);
     try {
       const data = await railwayApi.getLiveStation(code, 4);
+      if (!guard.isCurrent(reqId)) return;
       setBoard(data);
     } catch {
-      // Fallback sample departure data
-      setBoard({
-        stationCode: code,
-        stationName: code === 'BOR' ? 'Boisar' : code,
-        zone: 'WR',
-        lastUpdated: new Date().toISOString(),
-        arrivals: [],
-        departures: [
-          {
-            trainNumber: '19417',
-            trainName: 'Borivali - Vatva Express',
-            sourceCode: 'BVI',
-            sourceName: 'Borivali',
-            destinationCode: 'VTA',
-            destinationName: 'Vatva',
-            trainType: 'Express',
-            scheduledTime: '14:50',
-            expectedTime: '14:50',
-            delayMinutes: 0,
-            platform: '2',
-            status: 'ON TIME',
-            type: 'DEPARTURE',
-          },
-          {
-            trainNumber: '93011',
-            trainName: 'Churchgate - Dahanu Road Fast Local',
-            sourceCode: 'CCG',
-            sourceName: 'Churchgate',
-            destinationCode: 'DRD',
-            destinationName: 'Dahanu Road',
-            trainType: 'Fast Local',
-            scheduledTime: '09:45',
-            expectedTime: '09:45',
-            delayMinutes: 0,
-            platform: '2',
-            status: 'ON TIME',
-            type: 'DEPARTURE',
-          },
-          {
-            trainNumber: '22956',
-            trainName: 'Kutch SF Express',
-            sourceCode: 'BHUJ',
-            sourceName: 'Bhuj',
-            destinationCode: 'BDTS',
-            destinationName: 'Bandra Terminus',
-            trainType: 'Superfast',
-            scheduledTime: '09:14',
-            expectedTime: '09:18',
-            delayMinutes: 4,
-            platform: '3',
-            status: 'DELAYED 4M',
-            type: 'DEPARTURE',
-          },
-          {
-            trainNumber: '12922',
-            trainName: 'Flying Ranee',
-            sourceCode: 'ST',
-            sourceName: 'Surat',
-            destinationCode: 'MMCT',
-            destinationName: 'Mumbai Central',
-            trainType: 'Superfast',
-            scheduledTime: '07:35',
-            expectedTime: '07:35',
-            delayMinutes: 0,
-            platform: '1',
-            status: 'ON TIME',
-            type: 'DEPARTURE',
-          },
-        ],
-        delayedTrains: [],
-        cancelledTrains: [],
-      });
+      if (!guard.isCurrent(reqId)) return;
+      // No fabricated sample board — show an honest unavailable state instead.
+      setBoard(null);
+      setError('Live departure data is unavailable for this station right now.');
     } finally {
-      setLoading(false);
+      if (guard.isCurrent(reqId)) setLoading(false);
     }
   };
 
@@ -107,7 +46,7 @@ export const StationDepartureBoardCard: React.FC<StationDepartureBoardCardProps>
   const sortedDepartures = [...departures].sort((a, b) => {
     if (sortBy === 'time') return a.scheduledTime.localeCompare(b.scheduledTime);
     if (sortBy === 'delay') return b.delayMinutes - a.delayMinutes;
-    if (sortBy === 'platform') return a.platform.localeCompare(b.platform);
+    if (sortBy === 'platform') return (a.platform || '').localeCompare(b.platform || '');
     return 0;
   });
 
@@ -191,6 +130,10 @@ export const StationDepartureBoardCard: React.FC<StationDepartureBoardCardProps>
           <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
           <span>Loading live departures for {stationCode}...</span>
         </div>
+      ) : error ? (
+        <div className="py-6 text-center text-xs text-amber-500 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900 rounded-2xl">
+          {error}
+        </div>
       ) : sortedDepartures.length === 0 ? (
         <div className="py-6 text-center text-xs text-slate-400">
           No upcoming departures found for this station.
@@ -215,7 +158,7 @@ export const StationDepartureBoardCard: React.FC<StationDepartureBoardCardProps>
                 <div className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-2">
                   <span>To: <strong className="text-slate-700 dark:text-slate-300">{train.destinationName}</strong></span>
                   <span>•</span>
-                  <span>Platform <strong className="text-blue-600 dark:text-blue-400">{train.platform || '1'}</strong></span>
+                  <span>Platform <strong className="text-blue-600 dark:text-blue-400">{train.platform || 'Not announced'}</strong></span>
                 </div>
               </div>
 

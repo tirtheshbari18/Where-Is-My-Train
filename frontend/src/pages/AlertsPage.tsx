@@ -28,16 +28,23 @@ export const AlertsPage: React.FC = () => {
   );
 
   useEffect(() => {
+    let stale = false;
     setLoading(true);
     Promise.all([
       alertService.getAlerts(),
       alertService.getPowerBlocks(selectedLine),
     ])
       .then(([altData, blockData]) => {
+        if (stale) return;
         setAlerts(altData);
         setPowerBlocks(blockData);
       })
-      .finally(() => setLoading(false));
+      .finally(() => {
+        if (!stale) setLoading(false);
+      });
+    return () => {
+      stale = true;
+    };
   }, [selectedLine]);
 
   const requestNotificationPermission = async () => {
@@ -151,6 +158,15 @@ export const AlertsPage: React.FC = () => {
       {/* TAB 1: GENERAL RAILWAY ALERTS */}
       {!loading && activeTab === 'alerts' && (
         <div className="space-y-3.5">
+          {alerts.length === 0 && (
+            <div className="bg-white dark:bg-slate-900 rounded-2xl p-8 text-center border border-slate-200 dark:border-slate-800">
+              <CheckCircle className="w-10 h-10 text-emerald-500 mx-auto mb-2 opacity-70" />
+              <p className="text-sm font-bold text-slate-700 dark:text-slate-200">No active railway alerts</p>
+              <p className="text-xs text-slate-400 mt-1">
+                There are currently no service alerts for the lines you follow.
+              </p>
+            </div>
+          )}
           {alerts.map((alt) => (
             <div
               key={alt.id}
@@ -215,6 +231,17 @@ export const AlertsPage: React.FC = () => {
           </div>
 
           <div className="space-y-4">
+            {powerBlocks.length === 0 && (
+              <div className="bg-white dark:bg-slate-900 rounded-2xl p-8 text-center border border-slate-200 dark:border-slate-800">
+                <Construction className="w-10 h-10 text-slate-400 mx-auto mb-2 opacity-60" />
+                <p className="text-sm font-bold text-slate-700 dark:text-slate-200">
+                  No power block notices
+                </p>
+                <p className="text-xs text-slate-400 mt-1">
+                  No scheduled blocks for the selected line right now.
+                </p>
+              </div>
+            )}
             {powerBlocks.map((block) => (
               <div
                 key={block.id}

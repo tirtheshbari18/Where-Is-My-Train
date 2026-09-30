@@ -153,4 +153,12 @@ export class NtesRailwayProvider implements IRailwayDataProvider {
   ): Promise<import('../../types/railway.types.js').DetailedTimetableRow[]> {
     throw new Error('NTES live feed requires active authorized API credentials');
   }
+
+  async getTrainSegment(
+    _trainNumber: string,
+    _fromCode: string,
+    _toCode: string
+  ): Promise<import('../../types/railway.types.js').TrainSegmentResult> {
+    throw new Error('NTES live feed requires active authorized API credentials');
+  }
 }

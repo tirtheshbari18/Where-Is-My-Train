@@ -142,3 +142,133 @@
 .dark .leaflet-container {
   background: #0B192C !important;
 }
+
+/* ========================================
+   SCROLLBAR UTILITIES
+   ======================================== */
+.no-scrollbar,
+.scrollbar-none {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.no-scrollbar::-webkit-scrollbar,
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
+/* ========================================
+   ANIMATE-IN UTILITIES (Tailwind v3 compat)
+   ======================================== */
+.animate-in {
+  animation-fill-mode: both;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.fade-in { animation-name: fadeIn; }
+
+@keyframes slideInFromLeft {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(0); }
+}
+.slide-in-from-left { animation-name: slideInFromLeft; }
+
+@keyframes slideInFromRight {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+.slide-in-from-right { animation-name: slideInFromRight; }
+
+@keyframes slideInFromBottom {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+.slide-in-from-bottom { animation-name: slideInFromBottom; }
+
+@keyframes scaleIn {
+  from { opacity: 0; transform: scale(0.92); }
+  to { opacity: 1; transform: scale(1); }
+}
+.animate-scale-in {
+  animation: scaleIn 0.18s ease-out both;
+}
+
+/* ========================================
+   MOBILE SAFE AREA SUPPORT (PWA)
+   ======================================== */
+.safe-top { padding-top: env(safe-area-inset-top); }
+.safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
+.bottom-nav-safe { padding-bottom: max(0.5rem, env(safe-area-inset-bottom)); }
+
+/* ========================================
+   SKELETON LOADING SHIMMER
+   ======================================== */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.skeleton-shimmer {
+  background: linear-gradient(90deg, rgba(226,232,240,0.6) 25%, rgba(241,245,249,0.9) 37%, rgba(226,232,240,0.6) 63%);
+  background-size: 400% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+.dark .skeleton-shimmer {
+  background: linear-gradient(90deg, rgba(30,41,59,0.6) 25%, rgba(51,65,85,0.9) 37%, rgba(30,41,59,0.6) 63%);
+  background-size: 400% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+
+/* ========================================
+   FOCUS STATES FOR ACCESSIBILITY
+   ======================================== */
+:focus-visible {
+  outline: 2px solid #0A58CA;
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* ========================================
+   TOAST ANIMATIONS
+   ======================================== */
+@keyframes toastIn {
+  from { opacity: 0; transform: translateY(20px) scale(0.95); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.toast-enter { animation: toastIn 0.3s ease-out both; }
+
+/* ========================================
+   LIVE PULSE (trains in motion)
+   ======================================== */
+@keyframes livePulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+  70% { box-shadow: 0 0 0 8px rgba(16, 185, 129, 0); }
+}
+.live-pulse { animation: livePulse 2s infinite; }
+
+/* Inside-Train active state */
+.inside-train-active {
+  background: linear-gradient(135deg, #10B981, #059669);
+  box-shadow: 0 0 20px rgba(16, 185, 129, 0.4);
+}
+
+/* Community vote buttons */
+.vote-yes { background-color: #DCFCE7; color: #15803D; }
+.vote-no { background-color: #FEE2E2; color: #B91C1C; }
+.dark .vote-yes { background-color: rgba(21,128,61,0.2); color: #4ADE80; }
+.dark .vote-no { background-color: rgba(185,28,28,0.2); color: #F87171; }
+
+/* Touch target minimum size (accessibility) */
+.touch-target {
+  min-height: 44px;
+  min-width: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Suppress highlight on tap */
+* { -webkit-tap-highlight-color: transparent; }
+

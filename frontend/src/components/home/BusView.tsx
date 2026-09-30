@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { Bus, Search, MapPin, Navigation, ArrowRight } from 'lucide-react';
 import { busService, BusRouteSummary } from '../../services/busService.js';
+import { useRequestGuard } from '../../hooks/useRequestGuard.js';
 
 export const BusView: React.FC = () => {
+  const guard = useRequestGuard();
   const [yourLocation, setYourLocation] = useState('Borivali Station (West)');
   const [destination, setDestination] = useState('Andheri Station');
   const [busNumberQuery, setBusNumberQuery] = useState('');
@@ -15,30 +17,34 @@ export const BusView: React.FC = () => {
   }, []);
 
   const handleSearch = async () => {
+    const reqId = guard.next();
     setSearching(true);
     try {
       const data = await busService.searchBuses(busNumberQuery, yourLocation, destination);
+      if (!guard.isCurrent(reqId)) return;
       setBusResults(data);
       if (data.length > 0) setTrackingBus(data[0]);
     } catch {
       // ignore
     } finally {
-      setSearching(false);
+      if (guard.isCurrent(reqId)) setSearching(false);
     }
   };
 
   const handleSearchByNumber = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!busNumberQuery.trim()) return;
+    const reqId = guard.next();
     setSearching(true);
     try {
       const data = await busService.searchBuses(busNumberQuery.trim());
+      if (!guard.isCurrent(reqId)) return;
       setBusResults(data);
       if (data.length > 0) setTrackingBus(data[0]);
     } catch {
       // ignore
     } finally {
-      setSearching(false);
+      if (guard.isCurrent(reqId)) setSearching(false);
     }
   };
 
@@ -200,6 +206,10 @@ export const BusView: React.FC = () => {
 
         {searching ? (
           <div className="py-6 text-center text-xs text-slate-400">Searching active bus schedules...</div>
+        ) : busResults.length === 0 ? (
+          <div className="py-6 text-center text-xs text-slate-400 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-2xl">
+            No bus routes matched your search. Try a different origin, destination or bus number.
+          </div>
         ) : (
           <div className="space-y-3">
             {busResults.map((bus) => (

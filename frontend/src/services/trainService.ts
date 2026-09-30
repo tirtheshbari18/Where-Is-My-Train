@@ -244,19 +244,55 @@ export class TrainService {
     };
   }
 
+  /**
+   * "Inside This Train" tracking opt-in.
+   *
+   * The toggle is a *tracking preference* only — it records which train the user asked the app
+   * to follow. It is never treated as proof of physical location, and no GPS data is collected.
+   * State is scoped per train number so switching trains never leaks one train's state to another.
+   */
+  private insideTrainKey(trainNumber: string): string {
+    return `wimt_inside_train_${String(trainNumber).trim()}`;
+  }
+
+  private trackedTrainKey = 'wimt_tracked_train';
+
   isInsideTrain(trainNumber: string): boolean {
     try {
-      return localStorage.getItem(`wimt_inside_${trainNumber}`) === 'true';
+      return localStorage.getItem(this.insideTrainKey(trainNumber)) === 'true';
     } catch {
       return false;
     }
   }
 
   setInsideTrain(trainNumber: string, enabled: boolean): void {
+    const key = this.insideTrainKey(trainNumber);
     try {
-      localStorage.setItem(`wimt_inside_${trainNumber}`, enabled ? 'true' : 'false');
+      localStorage.setItem(key, enabled ? 'true' : 'false');
+      // Remember the single currently tracked train so alerts/refresh can be train-specific.
+      if (enabled) {
+        localStorage.setItem(this.trackedTrainKey, String(trainNumber).trim());
+      } else if (localStorage.getItem(this.trackedTrainKey) === String(trainNumber).trim()) {
+        localStorage.removeItem(this.trackedTrainKey);
+      }
     } catch {
-      // ignore
+      // ignore — storage unavailable (private mode)
+    }
+  }
+
+  /** Train number the user has opted to track, or null when tracking is off. */
+  getTrackedTrain(): string | null {
+    try {
+      const tracked = localStorage.getItem(this.trackedTrainKey);
+      if (!tracked) return null;
+      // Self-heal: drop stale references whose per-train flag is no longer enabled.
+      if (localStorage.getItem(this.insideTrainKey(tracked)) !== 'true') {
+        localStorage.removeItem(this.trackedTrainKey);
+        return null;
+      }
+      return tracked;
+    } catch {
+      return null;
     }
   }
 }

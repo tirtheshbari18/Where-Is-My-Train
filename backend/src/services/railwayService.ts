@@ -278,6 +278,23 @@ export class RailwayService {
     return providerManager.getDetailedTimetable(trainNumber);
   }
 
+  async getTrainSegment(
+    trainNumber: string,
+    fromCode: string,
+    toCode: string
+  ): Promise<import('../types/railway.types.js').TrainSegmentResult> {
+    const cleanNumber = trainNumber.trim();
+    const cleanFrom = fromCode.toUpperCase().trim();
+    const cleanTo = toCode.toUpperCase().trim();
+    const cacheKey = `train:segment:${cleanNumber}:${cleanFrom}:${cleanTo}`;
+    const cached = cacheService.get<import('../types/railway.types.js').TrainSegmentResult>(cacheKey);
+    if (cached.data && !cached.isStale) return cached.data;
+
+    const result = await providerManager.getTrainSegment(cleanNumber, cleanFrom, cleanTo);
+    cacheService.set(cacheKey, result, 3600);
+    return result;
+  }
+
   getRailwayZones() {
     return INDIAN_RAILWAY_ZONES;
   }

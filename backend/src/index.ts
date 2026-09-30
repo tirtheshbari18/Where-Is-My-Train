@@ -57,6 +57,15 @@ app.use((req, _res, next) => {
 // API Routes
 app.use('/api', apiRouter);
 
+// Fallback mount for environments where /api is stripped by serverless rewrites
+app.use((req, res, next) => {
+  if (req.path !== '/' && !req.path.startsWith('/api')) {
+    return apiRouter(req, res, next);
+  }
+  next();
+});
+
+
 // Root Welcome Endpoint
 app.get('/', (_req, res) => {
   res.json({
@@ -100,8 +109,9 @@ app.use((req, res) => {
 // Global Error Handler
 app.use(errorHandler);
 
-// Start Server
-if (process.env.NODE_ENV !== 'test') {
+// Start Server (skipped when running tests or when deployed as a Vercel serverless function)
+const isServerless = !!process.env.VERCEL;
+if (process.env.NODE_ENV !== 'test' && !isServerless) {
   app.listen(PORT, () => {
     console.log(`====================================================`);
     console.log(`🚂 WHERE IS MY TRAIN - BACKEND SERVER ACTIVE`);

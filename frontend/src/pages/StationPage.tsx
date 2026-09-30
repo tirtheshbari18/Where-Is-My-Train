@@ -30,9 +30,11 @@ import { DelayBadge } from '../components/trains/DelayBadge.js';
 import { storage } from '../utils/storage.js';
 import { formatTimeWithAmPm } from '../utils/timeFormat.js';
 import { platformVoteService, PlatformVoteResult } from '../services/platformVoteService.js';
+import { useRequestGuard } from '../hooks/useRequestGuard.js';
 
 export const StationPage: React.FC = () => {
   const { code } = useParams<{ code: string }>();
+  const dataGuard = useRequestGuard();
   const [station, setStation] = useState<StationDetailData | null>(null);
   const [liveBoard, setLiveBoard] = useState<LiveStationBoard | null>(null);
   const [activeBoard, setActiveBoard] = useState<'departures' | 'arrivals'>('departures');
@@ -42,27 +44,33 @@ export const StationPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [isFav, setIsFav] = useState(false);
 
-  // Community platform verification state
+  // Community platform verification state — populated from the live board only.
+  // No default train/platform is invented: the widget stays hidden until real data arrives.
   const [featuredTrain, setFeaturedTrain] = useState<{ number: string; name: string; platform: string }>({
-    number: '22956',
-    name: 'Kutch SF Express',
-    platform: '2',
+    number: '',
+    name: '',
+    platform: '',
   });
   const [voteResult, setVoteResult] = useState<PlatformVoteResult | null>(null);
+  const [voteBusy, setVoteBusy] = useState(false);
+  const [voteError, setVoteError] = useState<string | null>(null);
 
   const fetchStationData = async (isManual = false) => {
     if (!code) return;
+    const reqId = dataGuard.next();
     if (isManual) setRefreshing(true);
     else setLoading(true);
     setError(null);
 
     try {
       const stationData = await railwayApi.getStationDetail(code);
+      if (!dataGuard.isCurrent(reqId)) return;
       setStation(stationData);
       setIsFav(storage.isFavourite('STATION', stationData.code));
 
       try {
         const boardData = await railwayApi.getLiveStation(code, 6);
+        if (!dataGuard.isCurrent(reqId)) return;
         setLiveBoard(boardData);
 
         if (boardData && boardData.departures.length > 0) {
@@ -70,41 +78,61 @@ export const StationPage: React.FC = () => {
           setFeaturedTrain({
             number: firstDep.trainNumber,
             name: firstDep.trainName,
-            platform: firstDep.platform || '2',
+            platform: firstDep.platform || '',
           });
         }
       } catch (err: any) {
         console.warn('Live station board fetch warning:', err);
       }
     } catch (err: any) {
+      if (!dataGuard.isCurrent(reqId)) return;
       setError(err.message || 'Station not found');
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (dataGuard.isCurrent(reqId)) {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
   };
 
   useEffect(() => {
+    setFeaturedTrain({ number: '', name: '', platform: '' });
+    setVoteResult(null);
     fetchStationData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [code]);
 
   useEffect(() => {
-    if (station && featuredTrain.number) {
-      platformVoteService
-        .getVotes(featuredTrain.number, station.code, featuredTrain.platform)
-        .then(setVoteResult);
-    }
+    if (!station || !featuredTrain.number) return;
+    let cancelled = false;
+    platformVoteService
+      .getVotes(featuredTrain.number, station.code, featuredTrain.platform || undefined)
+      .then((res) => {
+        if (!cancelled) setVoteResult(res);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
   }, [station?.code, featuredTrain.number, featuredTrain.platform]);
 
   const handleVote = async (vote: 'YES' | 'NO' | 'NOT_SURE') => {
-    if (!station) return;
-    const res = await platformVoteService.submitVote(
-      featuredTrain.number,
-      station.code,
-      featuredTrain.platform,
-      vote
-    );
-    setVoteResult(res);
+    if (!station || !featuredTrain.number || voteBusy) return;
+    setVoteBusy(true);
+    setVoteError(null);
+    try {
+      const res = await platformVoteService.submitVote(
+        featuredTrain.number,
+        station.code,
+        featuredTrain.platform,
+        vote
+      );
+      setVoteResult(res);
+    } catch (err) {
+      setVoteError(err instanceof Error ? err.message : 'Your vote could not be saved.');
+    } finally {
+      setVoteBusy(false);
+    }
   };
 
   const toggleFav = () => {
@@ -161,12 +189,18 @@ export const StationPage: React.FC = () => {
     ? rawTrainsList.filter((t) => t.platform === selectedPlatform)
     : rawTrainsList;
 
-  const platformsList = station.platforms || [
-    { platformNumber: '1', platformType: 'SIDE', verificationStatus: 'VERIFIED' },
-    { platformNumber: '2', platformType: 'ISLAND', verificationStatus: 'VERIFIED' },
-    { platformNumber: '3', platformType: 'ISLAND', verificationStatus: 'VERIFIED' },
-    { platformNumber: '4', platformType: 'SIDE', verificationStatus: 'VERIFIED' },
-  ];
+  // Platforms are only ever shown when we actually have them: either from the station
+  // master record, or reported on the live board. Never fall back to an invented list.
+  const masterPlatforms: Array<{ platformNumber: string }> = station.platforms ?? [];
+  const boardPlatforms: Array<{ platformNumber: string }> = Array.from(
+    new Set(
+      rawTrainsList
+        .map((t) => String(t.platform ?? '').trim())
+        .filter(Boolean)
+    )
+  ).map((platformNumber) => ({ platformNumber }));
+  const platformsList =
+    masterPlatforms.length > 0 ? masterPlatforms : boardPlatforms;
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
@@ -243,27 +277,34 @@ export const StationPage: React.FC = () => {
             )}
           </div>
 
-          <div className="flex items-center gap-2 flex-wrap">
-            {platformsList.map((p) => {
-              const num = p.platformNumber || (p as any).platform_number;
-              const isSelected = selectedPlatform === num;
-              return (
-                <button
-                  key={num}
-                  type="button"
-                  onClick={() => setSelectedPlatform(isSelected ? null : num)}
-                  className={`px-4 py-2 rounded-xl font-mono font-black text-sm transition-all border shadow-xs ${
-                    isSelected
-                      ? 'bg-blue-600 text-white border-blue-600 scale-105'
-                      : 'bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 border-slate-300 dark:border-slate-700 hover:border-blue-400'
-                  }`}
-                  title={`Platform ${num} - Click to filter departures`}
-                >
-                  [ {num} ]
-                </button>
-              );
-            })}
-          </div>
+          {platformsList.length === 0 ? (
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Platform information for this station has not been published yet — it will
+              appear here as soon as real data is available.
+            </p>
+          ) : (
+            <div className="flex items-center gap-2 flex-wrap">
+              {platformsList.map((p) => {
+                const num = p.platformNumber || (p as any).platform_number;
+                const isSelected = selectedPlatform === num;
+                return (
+                  <button
+                    key={num}
+                    type="button"
+                    onClick={() => setSelectedPlatform(isSelected ? null : num)}
+                    className={`px-4 py-2 rounded-xl font-mono font-black text-sm transition-all border shadow-xs ${
+                      isSelected
+                        ? 'bg-blue-600 text-white border-blue-600 scale-105'
+                        : 'bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 border-slate-300 dark:border-slate-700 hover:border-blue-400'
+                    }`}
+                    title={`Platform ${num} - Click to filter departures`}
+                  >
+                    [ {num} ]
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         {/* 16. PREVIOUS / NEXT STATION & ROUTE KM */}
@@ -356,66 +397,104 @@ export const StationPage: React.FC = () => {
       {/* ============================================================== */}
       {/* 6. COMMUNITY PLATFORM ACCURACY VOTING WIDGET                   */}
       {/* ============================================================== */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-5 shadow-sm space-y-3">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <span className="text-[10px] font-black uppercase tracking-wider text-blue-600 dark:text-blue-400">
-              Community Platform Verification
-            </span>
-            <h3 className="text-sm sm:text-base font-extrabold text-slate-900 dark:text-white">
-              Is Platform {featuredTrain.platform} correct for {featuredTrain.number} {featuredTrain.name}?
-            </h3>
+      {featuredTrain.number && (
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-5 shadow-sm space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="min-w-0">
+              <span className="text-[10px] font-black uppercase tracking-wider text-blue-600 dark:text-blue-400">
+                Community Platform Verification
+              </span>
+              <h3 className="text-sm sm:text-base font-extrabold text-slate-900 dark:text-white">
+                {featuredTrain.platform
+                  ? `Is Platform ${featuredTrain.platform} correct for ${featuredTrain.number} ${featuredTrain.name}?`
+                  : `Which platform does ${featuredTrain.number} ${featuredTrain.name} use here?`}
+              </h3>
+            </div>
+
+            <div className="flex items-center gap-1.5 text-xs text-slate-500 font-semibold">
+              {voteResult?.available === false ? (
+                <>
+                  <AlertCircle className="w-4 h-4 text-amber-500" />
+                  <span>Votes unavailable right now</span>
+                </>
+              ) : (
+                <>
+                  <CheckCircle className="w-4 h-4 text-emerald-500" />
+                  <span>
+                    {voteResult && voteResult.totalVotes > 0
+                      ? `${voteResult.yesCount}/${voteResult.totalVotes} people approved this`
+                      : 'No community votes yet'}
+                  </span>
+                </>
+              )}
+            </div>
           </div>
 
-          <div className="flex items-center gap-1.5 text-xs text-slate-500 font-semibold">
-            <CheckCircle className="w-4 h-4 text-emerald-500" />
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => handleVote('YES')}
+              disabled={voteBusy}
+              className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 disabled:opacity-60 ${
+                voteResult?.userVoted === 'YES'
+                  ? 'bg-emerald-600 text-white shadow-sm'
+                  : 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 hover:bg-emerald-100'
+              }`}
+            >
+              <ThumbsUp className="w-3.5 h-3.5" />
+              <span>YES</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleVote('NO')}
+              disabled={voteBusy}
+              className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 disabled:opacity-60 ${
+                voteResult?.userVoted === 'NO'
+                  ? 'bg-red-600 text-white shadow-sm'
+                  : 'bg-red-50 dark:bg-red-950/40 text-red-800 dark:text-red-300 hover:bg-red-100'
+              }`}
+            >
+              <ThumbsDown className="w-3.5 h-3.5" />
+              <span>NO</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleVote('NOT_SURE')}
+              disabled={voteBusy}
+              className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 disabled:opacity-60 ${
+                voteResult?.userVoted === 'NOT_SURE'
+                  ? 'bg-slate-700 text-white shadow-sm'
+                  : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200'
+              }`}
+            >
+              <HelpCircle className="w-3.5 h-3.5" />
+              <span>NOT SURE</span>
+            </button>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-2 text-[10px] text-slate-400">
             <span>
-              {voteResult?.totalVotes
-                ? `${voteResult.yesCount}/${voteResult.totalVotes} people approved this`
-                : '4/4 people approved this'}
+              {voteResult
+                ? `${voteResult.yesCount} yes • ${voteResult.noCount} no • ${voteResult.notSureCount} not sure`
+                : 'Loading vote totals…'}
+            </span>
+            <span>
+              {voteResult?.lastUpdatedAt
+                ? `Last updated ${new Date(voteResult.lastUpdatedAt).toLocaleString('en-IN', {
+                    day: 'numeric',
+                    month: 'short',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  })}`
+                : 'No community votes recorded yet'}
             </span>
           </div>
-        </div>
 
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => handleVote('YES')}
-            className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 ${
-              voteResult?.userVoted === 'YES'
-                ? 'bg-emerald-600 text-white shadow-sm'
-                : 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 hover:bg-emerald-100'
-            }`}
-          >
-            <ThumbsUp className="w-3.5 h-3.5" />
-            <span>YES</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => handleVote('NO')}
-            className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 ${
-              voteResult?.userVoted === 'NO'
-                ? 'bg-red-600 text-white shadow-sm'
-                : 'bg-red-50 dark:bg-red-950/40 text-red-800 dark:text-red-300 hover:bg-red-100'
-            }`}
-          >
-            <ThumbsDown className="w-3.5 h-3.5" />
-            <span>NO</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => handleVote('NOT_SURE')}
-            className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 ${
-              voteResult?.userVoted === 'NOT_SURE'
-                ? 'bg-slate-700 text-white shadow-sm'
-                : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200'
-            }`}
-          >
-            <HelpCircle className="w-3.5 h-3.5" />
-            <span>NOT SURE</span>
-          </button>
+          {voteError && (
+            <p className="text-[11px] font-semibold text-red-600 dark:text-red-400">{voteError}</p>
+          )}
         </div>
-      </div>
+      )}
 
       {/* ============================================================== */}
       {/* 22. STATION DEPARTURE BOARD                                    */}

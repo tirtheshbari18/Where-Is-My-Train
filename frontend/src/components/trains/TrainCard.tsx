@@ -5,6 +5,7 @@ import { Train, ArrowRight, Clock, Heart, Utensils, CheckCircle2 } from 'lucide-
 import { TrainSummary } from '../../api/railwayApi.js';
 import { storage } from '../../utils/storage.js';
 import { formatTimeWithAmPm } from '../../utils/timeFormat.js';
+import { TrainSegmentTimeline } from './TrainSegmentTimeline.js';
 
 interface Props {
   train: TrainSummary;
@@ -14,7 +15,7 @@ interface Props {
 
 const ALL_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
-export const TrainCard: React.FC<Props> = ({ train, onFavouriteToggle }) => {
+export const TrainCard: React.FC<Props> = ({ train, onFavouriteToggle, highlightRoute }) => {
   const [isFav, setIsFav] = React.useState(() =>
     storage.isFavourite('TRAIN', train.trainNumber)
   );
@@ -210,6 +211,20 @@ export const TrainCard: React.FC<Props> = ({ train, onFavouriteToggle }) => {
           <span>Live Tracking</span>
         </Link>
       </div>
+
+      {/* Interactive Segment Timeline — shown when a from/to route is specified */}
+      {highlightRoute && (
+        <TrainSegmentTimeline
+          trainNumber={train.trainNumber}
+          fromCode={highlightRoute.from}
+          toCode={highlightRoute.to}
+          fromName={train.sourceName}
+          toName={train.destinationName}
+          fromDeparture={train.departureTime}
+          toArrival={train.arrivalTime}
+          journeyDistanceKm={train.distanceKm}
+        />
+      )}
     </div>
   );
 };

@@ -31,7 +31,45 @@ import {
   calculateRailwayDistance,
 } from '../data/masterRailwayDb.js';
 
-export function importZones(data: RailwayZoneMaster[] = MASTER_ZONES) {
+export function parseCsvOrJson<T = any>(input: string | T[] | undefined, defaultData: T[]): T[] {
+  if (!input) return defaultData;
+  if (Array.isArray(input)) return input;
+  if (typeof input !== 'string') return defaultData;
+  const trimmed = input.trim();
+  if (!trimmed) return defaultData;
+
+  if (trimmed.startsWith('[') || trimmed.startsWith('{')) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      return Array.isArray(parsed) ? parsed : [parsed];
+    } catch {
+      return defaultData;
+    }
+  }
+
+  // Parse CSV format
+  const lines = trimmed.split(/\r?\n/).filter((l) => l.trim().length > 0);
+  if (lines.length < 2) return defaultData;
+  const headers = lines[0].split(',').map((h) => h.trim().replace(/^["']|["']$/g, ''));
+  const records: any[] = [];
+
+  for (let i = 1; i < lines.length; i++) {
+    const values = lines[i].split(',').map((v) => v.trim().replace(/^["']|["']$/g, ''));
+    const obj: any = {};
+    for (let j = 0; j < headers.length; j++) {
+      const val = values[j] !== undefined ? values[j] : '';
+      if (val === 'true') obj[headers[j]] = true;
+      else if (val === 'false') obj[headers[j]] = false;
+      else if (!isNaN(Number(val)) && val !== '') obj[headers[j]] = Number(val);
+      else obj[headers[j]] = val;
+    }
+    records.push(obj);
+  }
+  return records as T[];
+}
+
+export function importZones(input?: string | RailwayZoneMaster[]) {
+  const data = parseCsvOrJson<RailwayZoneMaster>(input, MASTER_ZONES);
   const report = {
     total: data.length,
     valid: 0,
@@ -58,7 +96,8 @@ export function importZones(data: RailwayZoneMaster[] = MASTER_ZONES) {
   return report;
 }
 
-export function importDivisions(data: RailwayDivisionMaster[] = MASTER_DIVISIONS) {
+export function importDivisions(input?: string | RailwayDivisionMaster[]) {
+  const data = parseCsvOrJson<RailwayDivisionMaster>(input, MASTER_DIVISIONS);
   const validZones = new Set(MASTER_ZONES.map((z) => z.zone_code));
   const report = {
     total: data.length,
@@ -86,7 +125,8 @@ export function importDivisions(data: RailwayDivisionMaster[] = MASTER_DIVISIONS
   return report;
 }
 
-export function importStations(data: MasterStation[] = MASTER_STATIONS) {
+export function importStations(input?: string | MasterStation[]) {
+  const data = parseCsvOrJson<MasterStation>(input, MASTER_STATIONS);
   const validZones = new Set(MASTER_ZONES.map((z) => z.zone_code));
   const seenCodes = new Set<string>();
 
@@ -100,7 +140,7 @@ export function importStations(data: MasterStation[] = MASTER_STATIONS) {
   };
 
   for (const stn of data) {
-    if (!stn.station_code || !/^[A-Z0-9]{2,6}$/.test(stn.station_code)) {
+    if (!stn.station_code || !/^[A-Z0-9]{1,8}$/.test(stn.station_code)) {
       report.invalid++;
       report.errors.push(`Invalid station code format: ${stn.station_code}`);
       continue;
@@ -146,7 +186,8 @@ export function importStations(data: MasterStation[] = MASTER_STATIONS) {
   return report;
 }
 
-export function importPlatforms(data: StationPlatformMaster[] = MASTER_PLATFORMS) {
+export function importPlatforms(input?: string | StationPlatformMaster[]) {
+  const data = parseCsvOrJson<StationPlatformMaster>(input, MASTER_PLATFORMS);
   const validStationCodes = new Set(MASTER_STATIONS.map((s) => s.station_code));
   const seenStationPlatforms = new Set<string>();
 
@@ -186,7 +227,8 @@ export function importPlatforms(data: StationPlatformMaster[] = MASTER_PLATFORMS
   return report;
 }
 
-export function importRoutes(data: RailwayRouteMaster[] = MASTER_ROUTES) {
+export function importRoutes(input?: string | RailwayRouteMaster[]) {
+  const data = parseCsvOrJson<RailwayRouteMaster>(input, MASTER_ROUTES);
   const validStationCodes = new Set(MASTER_STATIONS.map((s) => s.station_code));
 
   const report = {

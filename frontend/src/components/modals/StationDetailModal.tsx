@@ -49,22 +49,35 @@ export const StationDetailModal: React.FC<StationDetailModalProps> = ({
   const [loading, setLoading] = useState<boolean>(false);
 
   useEffect(() => {
-    if (isOpen && stationCode) {
-      setLoading(true);
-      Promise.all([
-        stationService.getStation(stationCode),
-        stationService.getLiveBoard(stationCode),
-        railwayApi
-          .getTrainOperations(currentTrainNumber, stationCode)
-          .catch(() => []),
-      ])
-        .then(([info, board, ops]) => {
-          setStationInfo(info);
-          setLiveBoard(board);
-          setOperations(ops);
-        })
-        .finally(() => setLoading(false));
-    }
+    if (!isOpen || !stationCode) return;
+    let stale = false;
+    setLoading(true);
+    // Clear the previous station's data so nothing stale is shown while loading
+    setStationInfo(null);
+    setLiveBoard(null);
+    setOperations([]);
+    Promise.all([
+      stationService.getStation(stationCode),
+      stationService.getLiveBoard(stationCode),
+      railwayApi
+        .getTrainOperations(currentTrainNumber, stationCode)
+        .catch(() => []),
+    ])
+      .then(([info, board, ops]) => {
+        if (stale) return;
+        setStationInfo(info);
+        setLiveBoard(board);
+        setOperations(ops);
+      })
+      .catch(() => {
+        // leave the empty state in place — the modal shows an unavailable message
+      })
+      .finally(() => {
+        if (!stale) setLoading(false);
+      });
+    return () => {
+      stale = true;
+    };
   }, [isOpen, stationCode, currentTrainNumber]);
 
   if (!isOpen) return null;
@@ -126,7 +139,7 @@ export const StationDetailModal: React.FC<StationDetailModalProps> = ({
                 </div>
                 <div className="text-right">
                   <span className="text-xs font-bold text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-800 px-2 py-0.5 rounded-lg border border-slate-200 dark:border-slate-700">
-                    Platform {platform || '1'}
+                    Platform {platform || 'Not announced'}
                   </span>
                 </div>
               </div>
@@ -138,14 +151,16 @@ export const StationDetailModal: React.FC<StationDetailModalProps> = ({
             <div className="bg-slate-50 dark:bg-slate-800/80 p-3 rounded-2xl border border-slate-200 dark:border-slate-700 text-center">
               <div className="text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400">Platform</div>
               <div className="text-base font-black text-amber-600 dark:text-amber-400 mt-0.5">
-                PF #{platform || stationInfo?.numberOfPlatforms || '1'}
+                {platform ? `PF #${platform}` : 'PF —'}
               </div>
             </div>
 
             <div className="bg-slate-50 dark:bg-slate-800/80 p-3 rounded-2xl border border-slate-200 dark:border-slate-700 text-center">
               <div className="text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400">Total Platforms</div>
               <div className="text-base font-black text-slate-900 dark:text-white mt-0.5">
-                {stationInfo?.numberOfPlatforms || 6} Platforms
+                {stationInfo?.numberOfPlatforms
+                  ? `${stationInfo.numberOfPlatforms} Platforms`
+                  : 'Not available'}
               </div>
             </div>
 
@@ -157,15 +172,21 @@ export const StationDetailModal: React.FC<StationDetailModalProps> = ({
             </div>
           </div>
 
-          {/* Free Wi-Fi amenity */}
+          {/* Free Wi-Fi amenity — only claimed when the station record actually says so */}
           <div className="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-2xl border border-slate-200 dark:border-slate-700 flex items-center justify-between text-xs">
             <div className="flex items-center gap-2 text-slate-700 dark:text-slate-300">
               <Wifi className="w-4 h-4 text-emerald-500" />
               <span className="font-semibold">Free RailWire Optical Fiber Wi-Fi</span>
             </div>
-            <span className="text-emerald-700 dark:text-emerald-300 font-bold bg-emerald-100 dark:bg-emerald-950/80 px-2 py-0.5 rounded-full border border-emerald-300 dark:border-emerald-800 text-[11px]">
-              Active & Verified
-            </span>
+            {stationInfo?.wifiAvailable ? (
+              <span className="text-emerald-700 dark:text-emerald-300 font-bold bg-emerald-100 dark:bg-emerald-950/80 px-2 py-0.5 rounded-full border border-emerald-300 dark:border-emerald-800 text-[11px]">
+                Available at this station
+              </span>
+            ) : (
+              <span className="text-slate-500 dark:text-slate-400 font-bold bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-full border border-slate-200 dark:border-slate-700 text-[11px]">
+                Not confirmed
+              </span>
+            )}
           </div>
 
           {/* Section 11, 12, 13, 14, 15: RAILWAY OPERATIONS & INTERACTING TRAINS */}
@@ -217,7 +238,7 @@ export const StationDetailModal: React.FC<StationDetailModalProps> = ({
                             {op.scheduledTime}
                           </span>
                           <span className="text-[10px] font-bold text-amber-600 dark:text-amber-400">
-                            PF {op.platform || 'Loop'}
+                            {op.platform ? `PF ${op.platform}` : 'PF —'}
                           </span>
                         </div>
                         <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-blue-500 group-hover:translate-x-0.5 transition" />
@@ -271,7 +292,7 @@ export const StationDetailModal: React.FC<StationDetailModalProps> = ({
                           <span className="truncate max-w-[200px]">{tTrain.trainName}</span>
                         </div>
                         <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-                          PF {tTrain.platform || '1'} &bull; Time: {tTrain.expectedTime || tTrain.scheduledTime} &bull;{' '}
+                          PF {tTrain.platform || '—'} &bull; Time: {tTrain.expectedTime || tTrain.scheduledTime} &bull;{' '}
                           {tTrain.type}
                         </div>
                       </div>

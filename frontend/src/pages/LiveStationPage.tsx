@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { railwayApi, LiveStationBoard, StationLocation } from '../api/railwayApi.js';
 import { DelayBadge } from '../components/trains/DelayBadge.js';
+import { useRequestGuard } from '../hooks/useRequestGuard.js';
 
 const QUICK_STATIONS = [
   { code: 'LJN', name: 'Lucknow Jn' },
@@ -31,46 +32,63 @@ export const LiveStationPage: React.FC = () => {
   const [filterMode, setFilterMode] = useState<'all' | 'arrivals' | 'departures' | 'delayed'>('all');
   const [loading, setLoading] = useState(true);
   const [refreshCountdown, setRefreshCountdown] = useState(30);
+  const [boardError, setBoardError] = useState<string | null>(null);
+  const guard = useRequestGuard();
+  const searchGuard = useRequestGuard();
 
   const fetchBoard = async (code: string) => {
+    const reqId = guard.next();
     try {
       const data = await railwayApi.getLiveStation(code, 4);
+      if (!guard.isCurrent(reqId)) return;
       setLiveBoard(data);
+      setBoardError(null);
     } catch (err) {
+      if (!guard.isCurrent(reqId)) return;
       console.error('Failed to fetch live board:', err);
+      setBoardError('Live board data is unavailable right now. It will keep retrying automatically.');
     } finally {
-      setLoading(false);
+      if (guard.isCurrent(reqId)) setLoading(false);
     }
   };
 
   useEffect(() => {
     setLoading(true);
+    setBoardError(null);
     fetchBoard(selectedStation);
     setRefreshCountdown(30);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedStation]);
 
-  // Automatic 30s refresh countdown
+  // 1s countdown ticker + a real refresh every 30s (never inside a state updater,
+  // never while the tab is hidden, and guarded against out-of-order responses)
   useEffect(() => {
+    let remaining = 30;
     const timer = setInterval(() => {
-      setRefreshCountdown((prev) => {
-        if (prev <= 1) {
+      remaining -= 1;
+      if (remaining <= 0) {
+        remaining = 30;
+        if (!document.hidden && navigator.onLine) {
           fetchBoard(selectedStation);
-          return 30;
         }
-        return prev - 1;
-      });
+      }
+      setRefreshCountdown(remaining);
     }, 1000);
 
     return () => clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedStation]);
 
   const handleStationSearch = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!searchQuery.trim()) return;
+    const reqId = searchGuard.next();
     try {
       const results = await railwayApi.searchStations(searchQuery.trim());
+      if (!searchGuard.isCurrent(reqId)) return;
       setSearchResults(results);
     } catch {
+      if (!searchGuard.isCurrent(reqId)) return;
       setSearchResults([]);
     }
   };
@@ -221,9 +239,24 @@ export const LiveStationPage: React.FC = () => {
         </div>
 
         <div className="text-xs text-slate-400 font-mono">
-          Last updated: <strong className="text-slate-200">{liveBoard?.lastUpdated || 'Now'}</strong>
+          Last updated:{' '}
+          <strong className="text-slate-200">
+            {liveBoard?.lastUpdated
+              ? new Date(liveBoard.lastUpdated).toLocaleTimeString([], {
+                  hour: '2-digit',
+                  minute: '2-digit',
+                  second: '2-digit',
+                })
+              : 'Not available'}
+          </strong>
         </div>
       </div>
+
+      {boardError && (
+        <div className="p-3 rounded-xl border border-amber-500/40 bg-amber-950/30 text-amber-200 text-xs font-semibold">
+          {boardError}
+        </div>
+      )}
 
       {/* Live Train Board Items */}
       {loading ? (

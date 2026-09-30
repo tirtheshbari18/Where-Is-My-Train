@@ -16,18 +16,11 @@ import { TrainCard } from '../components/trains/TrainCard.js';
 import { StationAutocomplete } from '../components/common/StationAutocomplete.js';
 import { offlineStorageService } from '../services/offlineStorageService.js';
 import { searchHistoryService } from '../services/searchHistoryService.js';
+import { useRequestGuard } from '../hooks/useRequestGuard.js';
+import { PRIMARY_FILTER_CATEGORIES, matchesCategory } from '../utils/trainCategory.js';
 
-const FILTER_CLASSES = [
-  'ALL',
-  'Fast Local',
-  'Slow Local',
-  'AC Local',
-  'MEMU',
-  'Express',
-  'Superfast',
-  'Vande Bharat',
-  'Rajdhani',
-];
+// Master category filter pills from Section 9 (ALL, EXPRESS, LOCALS, SUPERFAST, WEEKLY, etc.)
+const FILTER_CLASSES = PRIMARY_FILTER_CATEGORIES;
 
 export const TrainsBetweenPage: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -46,8 +39,19 @@ export const TrainsBetweenPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [isOffline, setIsOffline] = useState(false);
 
+  // Only the latest trains-between request may update the UI.
+  const searchGuard = useRequestGuard();
+
   const fetchTrainsBetween = async (from: string, to: string, date: string) => {
-    if (!from || !to) return;
+    const requestId = searchGuard.next();
+    if (!from || !to) {
+      if (searchGuard.isCurrent(requestId)) {
+        setTrains([]);
+        setLoading(false);
+        setError(null);
+      }
+      return;
+    }
     setLoading(true);
     setError(null);
 
@@ -60,6 +64,7 @@ export const TrainsBetweenPage: React.FC = () => {
 
     if (!offlineStorageService.isOnline()) {
       const cached = offlineStorageService.searchOfflineBetween(from, to);
+      if (!searchGuard.isCurrent(requestId)) return;
       setTrains(cached as any);
       setIsOffline(true);
       setLoading(false);
@@ -68,10 +73,12 @@ export const TrainsBetweenPage: React.FC = () => {
 
     try {
       const data = await railwayApi.getTrainsBetween(from, to, date);
+      if (!searchGuard.isCurrent(requestId)) return;
       setTrains(data);
       setIsOffline(false);
       data.forEach((t) => offlineStorageService.cacheTrain(t));
     } catch (err: any) {
+      if (!searchGuard.isCurrent(requestId)) return;
       const cached = offlineStorageService.searchOfflineBetween(from, to);
       if (cached.length > 0) {
         setTrains(cached as any);
@@ -81,23 +88,35 @@ export const TrainsBetweenPage: React.FC = () => {
         setTrains([]);
       }
     } finally {
-      setLoading(false);
+      if (searchGuard.isCurrent(requestId)) setLoading(false);
     }
   };
 
   useEffect(() => {
     fetchTrainsBetween(fromParam, toParam, dateParam);
+    return () => searchGuard.invalidate();
   }, [fromParam, toParam, dateParam]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!fromStation || !toStation) return;
-    setSearchParams({
+    if (fromStation.trim().toUpperCase() === toStation.trim().toUpperCase()) {
+      setError('Source and destination stations cannot be the same.');
+      return;
+    }
+    const nextParams = {
       from: fromStation.trim().toUpperCase(),
       to: toStation.trim().toUpperCase(),
       date: travelDate,
-    });
-    fetchTrainsBetween(fromStation, toStation, travelDate);
+    };
+    const paramsUnchanged =
+      fromParam === nextParams.from && toParam === nextParams.to && dateParam === nextParams.date;
+    if (paramsUnchanged) {
+      // Params unchanged -> the guarded effect will not re-fire, fetch directly.
+      fetchTrainsBetween(fromStation, toStation, travelDate);
+    } else {
+      setSearchParams(nextParams);
+    }
   };
 
   const swapStations = () => {
@@ -124,9 +143,7 @@ export const TrainsBetweenPage: React.FC = () => {
 
     // Filter by type
     if (selectedClass !== 'ALL') {
-      result = result.filter((t) =>
-        t.trainType.toLowerCase().includes(selectedClass.toLowerCase())
-      );
+      result = result.filter((t) => matchesCategory(t.trainType, selectedClass));
     }
 
     // Filter by keyword

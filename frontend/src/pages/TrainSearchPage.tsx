@@ -5,18 +5,11 @@ import { railwayApi, TrainSummary } from '../api/railwayApi.js';
 import { TrainCard } from '../components/trains/TrainCard.js';
 import { offlineStorageService } from '../services/offlineStorageService.js';
 import { useTranslation } from '../context/LanguageContext.js';
+import { useRequestGuard } from '../hooks/useRequestGuard.js';
+import { PRIMARY_FILTER_CATEGORIES, matchesCategory } from '../utils/trainCategory.js';
 
-const TRAIN_TYPES = [
-  'ALL',
-  'Express',
-  'Passenger',
-  'Superfast',
-  'Local',
-  'Vande Bharat',
-  'Rajdhani',
-  'Shatabdi',
-  'Special',
-];
+// Master category filter pills from Section 9 (ALL, EXPRESS, LOCALS, SUPERFAST, WEEKLY, etc.)
+const TRAIN_TYPES = PRIMARY_FILTER_CATEGORIES;
 
 type TimeSlot = 'ALL' | 'morning' | 'afternoon' | 'evening' | 'night';
 type SortOption = 'default' | 'duration' | 'departure' | 'arrival';
@@ -35,13 +28,18 @@ export const TrainSearchPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [isOfflineResult, setIsOfflineResult] = useState(false);
 
+  // Only the latest search may update the UI (rapid consecutive searches must not race).
+  const searchGuard = useRequestGuard();
+
   const fetchTrains = async (q: string) => {
+    const requestId = searchGuard.next();
     setLoading(true);
     setError(null);
 
     // If offline, use offlineStorageService
     if (!offlineStorageService.isOnline()) {
       const offlineData = offlineStorageService.searchOfflineTrains(q);
+      if (!searchGuard.isCurrent(requestId)) return;
       setTrains(offlineData as any);
       setIsOfflineResult(true);
       setLoading(false);
@@ -50,11 +48,13 @@ export const TrainSearchPage: React.FC = () => {
 
     try {
       const data = await railwayApi.searchTrains(q);
+      if (!searchGuard.isCurrent(requestId)) return;
       setTrains(data);
       setIsOfflineResult(false);
       // Cache for offline search
       data.forEach((item) => offlineStorageService.cacheTrain(item));
     } catch (err: any) {
+      if (!searchGuard.isCurrent(requestId)) return;
       // Fallback to offline search if API fails
       const offlineData = offlineStorageService.searchOfflineTrains(q);
       if (offlineData.length > 0) {
@@ -64,27 +64,33 @@ export const TrainSearchPage: React.FC = () => {
         setError(err.message || 'Failed to search trains');
       }
     } finally {
-      setLoading(false);
+      if (searchGuard.isCurrent(requestId)) setLoading(false);
     }
   };
 
   useEffect(() => {
     fetchTrains(initialQuery);
+    return () => searchGuard.invalidate();
   }, [initialQuery]);
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    setSearchParams(query ? { q: query } : {});
-    fetchTrains(query);
+    const currentQ = searchParams.get('q') || '';
+    if (currentQ === query) {
+      // Search params unchanged -> the effect above will not re-fire, fetch directly.
+      fetchTrains(query);
+    } else {
+      // Changing the params re-runs the guarded effect, avoiding a duplicate request.
+      setSearchParams(query ? { q: query } : {});
+    }
   };
 
   // Filter and Sort
   const filteredTrains = trains
     .filter((t) => {
       // Filter by type
-      if (selectedType !== 'ALL') {
-        const typeMatch = t.trainType.toLowerCase().includes(selectedType.toLowerCase());
-        if (!typeMatch) return false;
+      if (selectedType !== 'ALL' && !matchesCategory(t.trainType, selectedType)) {
+        return false;
       }
 
       // Filter by departure time slot

@@ -317,6 +317,16 @@ export class ProviderManager implements IRailwayDataProvider {
       p.getDetailedTimetable(trainNumber)
     );
   }
+
+  async getTrainSegment(
+    trainNumber: string,
+    fromCode: string,
+    toCode: string
+  ): Promise<import('../types/railway.types.js').TrainSegmentResult> {
+    return this.executeWithFallback('getTrainSegment', (p) =>
+      p.getTrainSegment(trainNumber, fromCode, toCode)
+    );
+  }
 }
 
 // Export singleton instance

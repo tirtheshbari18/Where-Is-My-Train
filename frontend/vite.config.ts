@@ -14,4 +14,20 @@ export default defineConfig({
       },
     },
   },
+  build: {
+    // Increase chunk size limit warning threshold
+    chunkSizeWarningLimit: 800,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          // React runtime
+          'react-vendor': ['react', 'react-dom', 'react-router-dom'],
+          // Map library
+          'leaflet-vendor': ['leaflet'],
+          // Icon library
+          'lucide-vendor': ['lucide-react'],
+        },
+      },
+    },
+  },
 });

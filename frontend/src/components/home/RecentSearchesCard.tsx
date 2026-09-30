@@ -30,7 +30,40 @@ export const RecentSearchesCard: React.FC = () => {
     setHistory([]);
   };
 
-  if (history.length === 0) return null;
+  if (history.length === 0) {
+    return (
+      <div className="bg-white dark:bg-slate-900 rounded-3xl p-5 border border-slate-200 dark:border-slate-800 shadow-md space-y-2">
+        <div className="flex items-center gap-2">
+          <History className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+          <h3 className="font-bold text-sm text-slate-800 dark:text-white uppercase tracking-wider">
+            SEARCH HISTORY
+          </h3>
+        </div>
+        <div className="py-3 text-center">
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            No recent searches yet. Search for a train or route to see them here.
+          </p>
+          <div className="flex flex-wrap items-center justify-center gap-1.5 pt-3 text-xs">
+            <span className="text-slate-400 text-[11px] font-medium mr-1">Quick Links:</span>
+            {[
+              { label: '12922 Flying Ranee (ST - MMCT)', num: '12922' },
+              { label: '93023 Virar - Dahanu (BOR - DRD)', num: '93023' },
+              { label: '12009 Ahmedabad Shatabdi (MMCT - ADI)', num: '12009' },
+            ].map((route) => (
+              <button
+                key={route.num}
+                type="button"
+                onClick={() => navigate(`/train/${route.num}`)}
+                className="py-1 px-2.5 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-blue-600 dark:text-blue-400 text-[11px] font-medium transition"
+              >
+                {route.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="bg-white dark:bg-slate-900 rounded-3xl p-5 border border-slate-200 dark:border-slate-800 shadow-md space-y-3">
@@ -38,7 +71,7 @@ export const RecentSearchesCard: React.FC = () => {
         <div className="flex items-center gap-2">
           <History className="w-4 h-4 text-blue-600 dark:text-blue-400" />
           <h3 className="font-bold text-sm text-slate-800 dark:text-white uppercase tracking-wider">
-            Recent Searches
+            SEARCH HISTORY
           </h3>
         </div>
         <button

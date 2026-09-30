@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useParams, useSearchParams, useNavigate, Link } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -39,7 +39,9 @@ import { CoachPosition } from '../components/trains/CoachPosition.js';
 import { RailfanView } from '../components/trains/RailfanView.js';
 import { storage } from '../utils/storage.js';
 import { useTranslation } from '../context/LanguageContext.js';
+import { useRequestGuard } from '../hooks/useRequestGuard.js';
 import { trackingService, TelemetryProgress } from '../services/trackingService.js';
+import { trainService } from '../services/trainService.js';
 import { offlineStorageService } from '../services/offlineStorageService.js';
 import { AlarmModal } from '../components/modals/AlarmModal.js';
 import { CoachModal } from '../components/modals/CoachModal.js';
@@ -76,6 +78,34 @@ export const TrainDetailsPage: React.FC = () => {
   const [staleWarning, setStaleWarning] = useState<string | undefined>();
   const [isStale, setIsStale] = useState(false);
   const [isOfflineData, setIsOfflineData] = useState(false);
+
+  // "Inside this train" — kept here (not inside the timeline) so switching tabs
+  // does not reset it and so it can drive the live refresh interval.
+  const [insideTrain, setInsideTrain] = useState<boolean>(() =>
+    trainService.isInsideTrain(number || '')
+  );
+
+  const handleToggleInsideTrain = () => {
+    setInsideTrain((prev) => {
+      const next = !prev;
+      if (number) trainService.setInsideTrain(number, next);
+      return next;
+    });
+  };
+
+  // Race protection: only the most recent request may update state
+  const dataGuard = useRequestGuard();
+  const statusGuard = useRequestGuard();
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      dataGuard.invalidate();
+      statusGuard.invalidate();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Selected date ISO string (YYYY-MM-DD)
   const todayStr = useMemo(() => new Date().toISOString().split('T')[0], []);
@@ -189,6 +219,8 @@ export const TrainDetailsPage: React.FC = () => {
 
   const fetchTrainData = async (isManualRefresh = false) => {
     if (!number) return;
+    const reqId = dataGuard.next();
+    const statusId = statusGuard.next();
     if (isManualRefresh) setRefreshing(true);
     else setLoading(true);
     setError(null);
@@ -197,6 +229,7 @@ export const TrainDetailsPage: React.FC = () => {
     if (!offlineStorageService.isOnline()) {
       const cached = offlineStorageService.getCachedTrain(number);
       if (cached) {
+        if (!dataGuard.isCurrent(reqId)) return;
         setTrain(cached);
         setIsFav(storage.isFavourite('TRAIN', cached.trainNumber));
         setIsOfflineData(true);
@@ -208,6 +241,7 @@ export const TrainDetailsPage: React.FC = () => {
 
     try {
       const trainData = await railwayApi.getTrain(number);
+      if (!dataGuard.isCurrent(reqId)) return;
       setTrain(trainData);
       setIsFav(storage.isFavourite('TRAIN', trainData.trainNumber));
       offlineStorageService.cacheTrain(trainData);
@@ -227,6 +261,7 @@ export const TrainDetailsPage: React.FC = () => {
       // Fetch running status
       try {
         const statusRes = await railwayApi.getRunningStatus(number, selectedDateStr);
+        if (!statusGuard.isCurrent(statusId)) return;
         setStatus(statusRes.status);
         setIsStale(statusRes.isStale);
         setStaleWarning(statusRes.staleWarning);
@@ -280,6 +315,7 @@ export const TrainDetailsPage: React.FC = () => {
         console.warn('Railway map data not available:', err);
       }
     } catch (err: any) {
+      if (!dataGuard.isCurrent(reqId)) return;
       const cached = offlineStorageService.getCachedTrain(number);
       if (cached) {
         setTrain(cached);
@@ -288,14 +324,67 @@ export const TrainDetailsPage: React.FC = () => {
         setError(err.message || 'Train not found');
       }
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (dataGuard.isCurrent(reqId)) {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
   };
 
+  /**
+   * Lightweight live-status refresh (one endpoint) used by the auto-refresh timer
+   * and by date changes — it never touches the rest of the page state.
+   */
+  const refreshRunningStatus = useCallback(async () => {
+    if (!number) return;
+    const statusId = statusGuard.next();
+    try {
+      const statusRes = await railwayApi.getRunningStatus(number, selectedDateStr);
+      if (!statusGuard.isCurrent(statusId) || !mountedRef.current) return;
+      setStatus(statusRes.status);
+      setIsStale(statusRes.isStale);
+      setStaleWarning(statusRes.staleWarning);
+    } catch (err) {
+      console.warn('Running status refresh failed:', err);
+    }
+  }, [number, selectedDateStr, statusGuard]);
+
+  // Initial load when the train number changes
   useEffect(() => {
+    setInsideTrain(trainService.isInsideTrain(number || ''));
     fetchTrainData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [number]);
+
+  // Re-fetch the live status when a different travel date is selected
+  const dateChangeInitRef = useRef(true);
+  useEffect(() => {
+    if (dateChangeInitRef.current) {
+      dateChangeInitRef.current = false;
+      return;
+    }
+    refreshRunningStatus();
+  }, [refreshRunningStatus]);
+
+  // Safe live refresh: 30s while actively tracking this train, 60s otherwise.
+  // Nothing is fetched while the tab is hidden.
+  useEffect(() => {
+    if (!number) return;
+    const intervalMs = insideTrain ? 30_000 : 60_000;
+    const tick = () => {
+      if (document.hidden || !navigator.onLine) return;
+      refreshRunningStatus();
+    };
+    const id = window.setInterval(tick, intervalMs);
+    const onVisible = () => {
+      if (!document.hidden) tick();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      window.clearInterval(id);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [number, insideTrain, refreshRunningStatus]);
 
   const toggleFav = () => {
     if (!train) return;
@@ -638,6 +727,17 @@ export const TrainDetailsPage: React.FC = () => {
           </div>
         )}
 
+        {status && (
+          <DataFreshnessNotice
+            source={status.source || 'Authorized NTES / CRIS Gateway'}
+            updatedAt={status.updatedAt}
+            dataFreshnessText={status.dataFreshnessText}
+            isStale={isStale}
+            staleWarning={staleWarning}
+            confidence={status.dataSourceConfidence}
+          />
+        )}
+
         {/* Navigation Tabs Header */}
         <div className="flex rounded-2xl bg-slate-900 p-1.5 border border-slate-800 overflow-x-auto scrollbar-none gap-1">
           <button
@@ -727,6 +827,9 @@ export const TrainDetailsPage: React.FC = () => {
               trainOperations={trainOperations}
               selectedStationCode={selectedStationCode}
               status={status}
+              insideTrain={insideTrain}
+              onToggleInsideTrain={handleToggleInsideTrain}
+              journeyDate={selectedDateStr}
               onRefreshStatus={() => fetchTrainData(true)}
               isRefreshingStatus={refreshing}
               onStationClick={(code, name, distanceKm, platform) => {

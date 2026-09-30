@@ -9,10 +9,13 @@ import {
   AlertCircle,
   Train,
   BookmarkPlus,
+  Mic,
+  X,
 } from 'lucide-react';
 import { pnrService } from '../services/pnrService.js';
 import { ticketService } from '../services/ticketService.js';
 import { PnrStatus } from '../api/railwayApi.js';
+import { useRequestGuard } from '../hooks/useRequestGuard.js';
 
 export const PnrPage: React.FC = () => {
   const [pnr, setPnr] = useState('');
@@ -20,6 +23,44 @@ export const PnrPage: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savedSuccess, setSavedSuccess] = useState(false);
+  const [isListening, setIsListening] = useState(false);
+  const searchGuard = useRequestGuard();
+
+  const handleVoiceInput = () => {
+    const SpeechRecognition =
+      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      alert('Voice recognition is not supported in this browser.');
+      return;
+    }
+
+    try {
+      const recognition = new SpeechRecognition();
+      recognition.lang = 'en-IN';
+      recognition.interimResults = false;
+      recognition.maxAlternatives = 1;
+
+      recognition.onstart = () => setIsListening(true);
+      recognition.onend = () => setIsListening(false);
+      recognition.onerror = () => setIsListening(false);
+
+      recognition.onresult = (event: any) => {
+        const spoken = event.results[0][0].transcript;
+        const digits = spoken.replace(/\D/g, '').slice(0, 10);
+        if (digits) {
+          setPnr(digits);
+          if (digits.length === 10) {
+            handlePnrSearch(digits);
+          }
+        }
+      };
+
+      recognition.start();
+    } catch (err) {
+      console.warn('Voice input error:', err);
+      setIsListening(false);
+    }
+  };
 
   const handlePnrSearch = async (targetPnr?: string) => {
     const cleanPnr = (targetPnr || pnr).trim();
@@ -28,6 +69,7 @@ export const PnrPage: React.FC = () => {
       return;
     }
 
+    const reqId = searchGuard.next();
     setLoading(true);
     setError(null);
     setPnrData(null);
@@ -35,19 +77,30 @@ export const PnrPage: React.FC = () => {
 
     try {
       const data = await pnrService.getStatus(cleanPnr);
+      if (!searchGuard.isCurrent(reqId)) return;
       setPnrData(data);
     } catch (err: any) {
+      if (!searchGuard.isCurrent(reqId)) return;
       setError(err.message || 'Unable to check PNR status.');
     } finally {
-      setLoading(false);
+      if (searchGuard.isCurrent(reqId)) setLoading(false);
     }
   };
 
   const handleSaveToTickets = () => {
     if (!pnrData) return;
-    const sourceCode = pnrData.fromStation.match(/\(([^)]+)\)/)?.[1] || 'BVI';
-    const destCode = pnrData.toStation.match(/\(([^)]+)\)/)?.[1] || 'VTA';
+    const sourceCode = pnrData.fromStation.match(/\(([^)]+)\)/)?.[1] || '';
+    const destCode = pnrData.toStation.match(/\(([^)]+)\)/)?.[1] || '';
+    const statuses = pnrData.passengers.map((p) => p.currentStatus.toUpperCase());
+    const ticketStatus: 'CONFIRMED' | 'RAC' | 'WAITLISTED' =
+      statuses.some((s) => s.includes('RAC')) && !statuses.every((s) => s.includes('CNF') || s.includes('CONFIRM'))
+        ? 'RAC'
+        : statuses.every((s) => s.includes('CNF') || s.includes('CONFIRM'))
+        ? 'CONFIRMED'
+        : 'WAITLISTED';
 
+    // Only fields the PNR provider actually returned are stored — no invented
+    // times, fares, ages or coaches are written into the user's ticket record.
     ticketService.saveTicket({
       ticketNumber: `IR-${pnrData.pnr}`,
       pnrNumber: pnrData.pnr,
@@ -58,20 +111,15 @@ export const PnrPage: React.FC = () => {
       destinationCode: destCode,
       destinationName: pnrData.toStation.replace(/\([^)]+\)/, '').trim(),
       journeyDate: pnrData.dateOfJourney,
-      departureTime: '01:25 PM',
-      arrivalTime: '02:45 AM',
       passengerCount: pnrData.passengers.length,
       passengers: pnrData.passengers.map((p) => ({
         name: `Passenger ${p.passengerNumber}`,
-        age: 30,
-        gender: 'M',
-        coach: p.coach || 'S2',
-        berth: String(p.berth || '45'),
+        coach: p.coach,
+        berth: p.berth !== undefined ? String(p.berth) : undefined,
         status: p.currentStatus,
       })),
-      fare: 540,
       classType: pnrData.reservationClass,
-      status: 'CONFIRMED',
+      status: ticketStatus,
     });
     setSavedSuccess(true);
     setTimeout(() => setSavedSuccess(false), 3000);
@@ -112,25 +160,54 @@ export const PnrPage: React.FC = () => {
           className="space-y-3.5"
         >
           <div>
-            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
-              Enter 10-Digit PNR Number
+            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5 uppercase tracking-wider">
+              Enter Your PNR No
             </label>
-            <div className="relative">
+            <div className="relative flex items-center">
               <input
                 type="text"
                 maxLength={10}
                 value={pnr}
                 onChange={(e) => setPnr(e.target.value.replace(/\D/g, ''))}
-                placeholder="e.g. 2451234567 or 4829104821"
-                className="w-full bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white font-mono font-black text-lg rounded-xl pl-11 pr-4 py-3 border border-slate-300 dark:border-slate-700 focus:border-blue-500 focus:outline-none tracking-widest"
+                placeholder="Enter Your PNR No (10 digits)"
+                className="w-full bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white font-mono font-black text-lg rounded-xl pl-11 pr-20 py-3 border border-slate-300 dark:border-slate-700 focus:border-blue-500 focus:outline-none tracking-widest"
               />
               <FileText className="w-5 h-5 text-slate-400 absolute left-3.5 top-3.5" />
+              <div className="absolute right-2.5 flex items-center gap-1">
+                {pnr && (
+                  <button
+                    type="button"
+                    onClick={() => setPnr('')}
+                    className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg"
+                    title="Clear PNR"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={handleVoiceInput}
+                  className={`p-2 rounded-lg transition ${
+                    isListening
+                      ? 'bg-rose-500 text-white animate-pulse'
+                      : 'text-slate-400 hover:text-blue-500 hover:bg-slate-100 dark:hover:bg-slate-700'
+                  }`}
+                  title={isListening ? 'Listening...' : 'Voice input'}
+                >
+                  <Mic className="w-4 h-4" />
+                </button>
+              </div>
             </div>
+            {isListening && (
+              <p className="text-[11px] text-rose-500 font-bold mt-1 ml-1 animate-pulse">
+                🎙️ Listening for PNR digits... Speak now
+              </p>
+            )}
           </div>
 
           {/* Quick Try Samples */}
           <div className="flex flex-wrap items-center gap-2 text-xs">
-            <span className="font-semibold text-slate-400">Quick Test PNRs:</span>
+            <span className="font-semibold text-slate-400">Sample PNRs (demo data):</span>
             {[
               { label: '2451234567 (19417 Borivali-Vatva)', pnr: '2451234567' },
               { label: '4829104821 (22956 Kutch SF)', pnr: '4829104821' },
@@ -153,7 +230,7 @@ export const PnrPage: React.FC = () => {
             <button
               type="submit"
               disabled={loading}
-              className="py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs sm:text-sm shadow-md transition flex items-center justify-center gap-2 active:scale-95"
+              className="py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-sm shadow-md transition flex items-center justify-center gap-2 active:scale-95 uppercase tracking-wider"
             >
               {loading ? (
                 <>
@@ -163,7 +240,7 @@ export const PnrPage: React.FC = () => {
               ) : (
                 <>
                   <Search className="w-4 h-4" />
-                  <span>Search PNR Status</span>
+                  <span>Find PNR Status</span>
                 </>
               )}
             </button>
@@ -261,7 +338,7 @@ export const PnrPage: React.FC = () => {
 
             {/* Transparency / Demo Notice */}
             {pnrData.notice && (
-              <p className="text-[11px] text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-800/40 p-3 rounded-xl border border-slate-200 dark:border-slate-700/60 leading-relaxed">
+              <p className="text-[11px] font-semibold text-amber-800 dark:text-amber-200 bg-amber-50 dark:bg-amber-950/50 p-3 rounded-xl border border-amber-300 dark:border-amber-800 leading-relaxed">
                 {pnrData.notice}
               </p>
             )}

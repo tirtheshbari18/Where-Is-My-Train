@@ -393,7 +393,7 @@ export const DetailedTimetableTable: React.FC<DetailedTimetableTableProps> = ({
                   <td className="py-3 px-3 text-center">
                     <div className="flex items-center justify-center gap-1.5">
                       <span className="font-bold text-slate-800 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded text-[11px] border border-slate-200 dark:border-slate-700">
-                        PF {row.platform || '--'}
+                        {row.platform ? `PF ${row.platform}` : 'Platform not available'}
                       </span>
                       <button
                         onClick={(e) => {
@@ -419,30 +419,40 @@ export const DetailedTimetableTable: React.FC<DetailedTimetableTableProps> = ({
                   </td>
 
                   {/* Speed */}
-                  <td className="py-3 px-2.5 text-right font-mono text-blue-600 dark:text-blue-400 font-semibold">
-                    {row.speedKmH} <span className="text-[10px] text-slate-400">km/h</span>
+                  <td className="py-3 px-2.5 text-right font-mono text-blue-600 dark:text-blue-400 font-semibold text-[11px]">
+                    {row.speedKmH ? (
+                      <>
+                        {row.speedKmH} <span className="text-[10px] text-slate-400">km/h</span>
+                      </>
+                    ) : (
+                      <span className="text-slate-400 font-normal">Not available</span>
+                    )}
                   </td>
 
                   {/* Elevation */}
-                  <td className="py-3 px-2.5 text-right font-mono text-slate-600 dark:text-slate-400">
-                    {row.elevationMeters}m
+                  <td className="py-3 px-2.5 text-right font-mono text-slate-600 dark:text-slate-400 text-[11px]">
+                    {row.elevationMeters ? `${row.elevationMeters}m` : <span className="text-slate-400 font-normal">Not available</span>}
                   </td>
 
                   {/* Zone */}
                   <td className="py-3 px-2 text-center">
-                    <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
-                      {row.zone}
-                    </span>
+                    {row.zone ? (
+                      <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+                        {row.zone}
+                      </span>
+                    ) : (
+                      <span className="text-slate-400 text-[10px]">Not available</span>
+                    )}
                   </td>
 
                   {/* Division */}
                   <td className="py-3 px-2.5 text-slate-600 dark:text-slate-400 text-[11px]">
-                    {row.division}
+                    {row.division || <span className="text-slate-400">Not available</span>}
                   </td>
 
                   {/* Address */}
                   <td className="py-3 px-3 text-slate-500 dark:text-slate-400 text-[11px] truncate max-w-[150px]">
-                    {row.address}
+                    {row.address || <span className="text-slate-400 italic">Not available</span>}
                   </td>
                 </tr>
               ))}
@@ -481,14 +491,16 @@ export const DetailedTimetableTable: React.FC<DetailedTimetableTableProps> = ({
                       {row.stationName}
                     </h3>
                   </div>
-                  <p className="text-[11px] text-slate-400 mt-0.5">{row.address}</p>
+                  <p className="text-[11px] text-slate-400 mt-0.5">
+                    {row.address || 'Address not available'}
+                  </p>
                 </div>
               </div>
 
               {/* Platform badge with edit */}
               <div className="flex items-center gap-1">
                 <span className="px-2 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 text-xs font-bold">
-                  PF {row.platform || '--'}
+                  {row.platform ? `PF ${row.platform}` : 'Platform not available'}
                 </span>
                 <button
                   onClick={(e) => {
@@ -532,21 +544,21 @@ export const DetailedTimetableTable: React.FC<DetailedTimetableTableProps> = ({
             </div>
 
             {/* Operational details footer */}
-            <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400 pt-1">
+            <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400 pt-1 flex-wrap gap-2">
               <span className="flex items-center gap-1 font-mono font-semibold">
                 <MapPin className="w-3 h-3 text-slate-400" />
                 {row.distanceKm.toFixed(1)} km
               </span>
               <span className="flex items-center gap-1 font-mono text-blue-600 dark:text-blue-400">
                 <Gauge className="w-3 h-3" />
-                {row.speedKmH} km/h
+                {row.speedKmH ? `${row.speedKmH} km/h` : 'Speed not available'}
               </span>
               <span className="flex items-center gap-1 font-mono">
                 <Mountain className="w-3 h-3 text-slate-400" />
-                {row.elevationMeters}m
+                {row.elevationMeters ? `${row.elevationMeters}m` : 'Elevation not available'}
               </span>
               <span className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-[10px] font-bold">
-                {row.zone}/{row.division}
+                {row.zone || row.division ? `${row.zone || '—'}/${row.division || '—'}` : 'Zone/Division not available'}
               </span>
             </div>
           </div>

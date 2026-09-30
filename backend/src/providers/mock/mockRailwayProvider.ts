@@ -139,6 +139,13 @@ export class MockRailwayProvider implements IRailwayDataProvider {
     // Determine current progression simulation:
     const stops = train.schedule;
 
+    // DEMO PROVIDER LABELS — this provider never produces real live railway telemetry.
+    // Everything it returns is simulated, and must be presented as "Demo Data" downstream.
+    const DEMO_SOURCE = 'Mock Railway Data Provider (Development Sandbox)';
+    const DEMO_CONFIDENCE = 'Simulated / Demo';
+    const generatedAt = new Date().toISOString();
+    const demoFreshness = 'Demo data — generated on request, not a live railway feed';
+
     // Special exact matching for reference train 19417 (Borivali -> Vatva Express)
     if (trainNumber === '19417') {
       const borivali = stops[0]; // BVI
@@ -150,37 +157,39 @@ export class MockRailwayProvider implements IRailwayDataProvider {
         trainName: 'Borivali - Vatva Express',
         journeyDate: date,
         status: 'RUNNING',
-        statusMessage: 'No Delay. Departed Borivali (PF 4). Next Stop: Vasai Road (18 km - 1:48 PM).',
+        statusMessage: `Demo data: simulated departure from ${borivali.stationName}. Next scheduled stop: ${vasai.stationName}.`,
         lastReportedStation: {
           code: borivali.stationCode,
           name: borivali.stationName,
           actualArrival: 'START',
-          actualDeparture: '13:25',
+          actualDeparture: borivali.scheduledDeparture,
           delayMinutes: 0,
-          platform: '4',
+          platform: borivali.platform || undefined,
         },
         previousStation: null,
         nextStation: {
           code: vasai.stationCode,
           name: vasai.stationName,
-          expectedArrival: '13:48',
-          expectedDeparture: '13:50',
+          expectedArrival: vasai.scheduledArrival,
+          expectedDeparture: vasai.scheduledDeparture,
           delayMinutes: 0,
-          platform: '4',
-          distanceRemainingKm: 18,
+          platform: vasai.platform || undefined,
+          distanceRemainingKm: Math.max(
+            0,
+            vasai.distanceFromSourceKm - borivali.distanceFromSourceKm
+          ),
         },
         currentStationTimelineIndex: 0,
         delayMinutes: 0,
-        expectedArrivalAtDestination: '02:45',
+        expectedArrivalAtDestination: vatva.scheduledArrival,
         latitude: borivali.latitude,
         longitude: borivali.longitude,
         positionType: 'station',
-        speedKmH: 82,
-        locoNumber: 'WAP-5 #30018 (Vadodara Shed)',
-        source: 'Authorized Railway NTES Live Stream',
-        dataSourceConfidence: 'Authoritative',
-        updatedAt: new Date().toISOString(),
-        dataFreshnessText: 'Updated few seconds ago',
+        // No speed telemetry is available from this provider — never invent one.
+        source: DEMO_SOURCE,
+        dataSourceConfidence: DEMO_CONFIDENCE,
+        updatedAt: generatedAt,
+        dataFreshnessText: demoFreshness,
       };
     }
 
@@ -191,29 +200,26 @@ export class MockRailwayProvider implements IRailwayDataProvider {
     const nextStation = midIndex < stops.length - 1 ? stops[midIndex + 1] : null;
     const destStation = stops[stops.length - 1];
 
-    // Realistic delay: Vande Bharat usually runs close to on-time (0-6m delay), others may have 5-15m
-    const simulatedDelay = train.trainType === 'Vande Bharat' ? 0 : 5;
-
     return {
       trainNumber: train.trainNumber,
       trainName: train.trainName,
       journeyDate: date,
       status: 'RUNNING',
-      statusMessage: `Train passed ${lastReported.stationName} (${lastReported.stationCode}) running with +${simulatedDelay} min delay. Next stop: ${nextStation?.stationName || 'Destination'}.`,
+      statusMessage: `Demo data: simulated position near ${lastReported.stationName} (${lastReported.stationCode}). Next scheduled stop: ${nextStation?.stationName || 'Destination'}.`,
       lastReportedStation: {
         code: lastReported.stationCode,
         name: lastReported.stationName,
         actualArrival: lastReported.scheduledArrival,
         actualDeparture: lastReported.scheduledDeparture,
-        delayMinutes: simulatedDelay,
-        platform: lastReported.platform || '1',
+        delayMinutes: 0,
+        platform: lastReported.platform || undefined,
       },
       previousStation: prevStation
         ? {
             code: prevStation.stationCode,
             name: prevStation.stationName,
             passedAt: prevStation.scheduledDeparture,
-            delayMinutes: Math.max(0, simulatedDelay - 4),
+            delayMinutes: 0,
           }
         : null,
       nextStation: nextStation
@@ -222,25 +228,22 @@ export class MockRailwayProvider implements IRailwayDataProvider {
             name: nextStation.stationName,
             expectedArrival: nextStation.scheduledArrival,
             expectedDeparture: nextStation.scheduledDeparture,
-            delayMinutes: simulatedDelay,
-            platform: nextStation.platform || '2',
+            delayMinutes: 0,
+            platform: nextStation.platform || undefined,
             distanceRemainingKm: nextStation.distanceFromSourceKm - lastReported.distanceFromSourceKm,
           }
         : null,
       currentStationTimelineIndex: midIndex,
-      delayMinutes: simulatedDelay,
+      delayMinutes: 0,
       expectedArrivalAtDestination: destStation.scheduledArrival,
       latitude: lastReported.latitude,
       longitude: lastReported.longitude,
       positionType: 'station', // Station-based reporting, transparently labeled
-      speedKmH: train.trainType === 'Vande Bharat' ? 115 : 92,
-      locoNumber: train.locoType?.includes('WAP-7')
-        ? 'WAP-7 #30491 (BRC Shed)'
-        : 'Vande Bharat Trainset Rake #08',
-      source: 'Mock Railway Data Provider (Development Sandbox)',
-      dataSourceConfidence: 'Simulated / Demo',
-      updatedAt: new Date().toISOString(),
-      dataFreshnessText: 'Last reported at station • Demo provider active',
+      // No speed telemetry is available from this provider — never invent one.
+      source: DEMO_SOURCE,
+      dataSourceConfidence: DEMO_CONFIDENCE,
+      updatedAt: generatedAt,
+      dataFreshnessText: demoFreshness,
     };
   }
 
@@ -346,8 +349,36 @@ export class MockRailwayProvider implements IRailwayDataProvider {
     toCode: string,
     _date?: string
   ): Promise<TrainSummary[]> {
-    const fCode = fromCode.toUpperCase();
-    const tCode = toCode.toUpperCase();
+    const fCode = fromCode.toUpperCase().trim();
+    const tCode = toCode.toUpperCase().trim();
+
+    if (!fCode || !tCode || fCode === tCode) {
+      return [];
+    }
+
+    const isPassengerStop = (s: TrainStop, idx: number, total: number): boolean => {
+      if (typeof s.is_stop === 'boolean') return s.is_stop;
+      if (typeof (s as any).isStop === 'boolean') return (s as any).isStop;
+      if ((s as any).actionType === 'PASS') return false;
+      if (idx === 0 || idx === total - 1) return true;
+      if (s.scheduledArrival === 'START' || s.scheduledDeparture === 'END') return true;
+      return s.haltMinutes > 0;
+    };
+
+    const formatTo12H = (str?: string): string => {
+      if (!str || str === 'START' || str === 'END' || str === '--') return '--:--';
+      const clean = str.trim().toUpperCase();
+      if (clean.includes('AM') || clean.includes('PM')) return clean;
+      const parts = clean.split(':');
+      if (parts.length < 2) return clean;
+      let h = parseInt(parts[0], 10);
+      const m = parts[1].slice(0, 2);
+      if (isNaN(h)) return clean;
+      const ampm = h >= 12 ? 'PM' : 'AM';
+      h = h % 12 || 12;
+      const hStr = h < 10 ? `0${h}` : `${h}`;
+      return `${hStr}:${m} ${ampm}`;
+    };
 
     const matches = MOCK_TRAINS.filter((train) => {
       const fromIndex = train.schedule.findIndex(
@@ -356,13 +387,30 @@ export class MockRailwayProvider implements IRailwayDataProvider {
       const toIndex = train.schedule.findIndex(
         (s) => s.stationCode.toUpperCase() === tCode
       );
-      return fromIndex !== -1 && toIndex !== -1 && fromIndex < toIndex;
+
+      // Must belong to the same train and FROM must precede TO in route sequence
+      if (fromIndex === -1 || toIndex === -1 || fromIndex >= toIndex) {
+        return false;
+      }
+
+      const fromStop = train.schedule[fromIndex];
+      const toStop = train.schedule[toIndex];
+      const seqFrom = fromStop.sequence_number ?? fromStop.stopSequence ?? fromIndex + 1;
+      const seqTo = toStop.sequence_number ?? toStop.stopSequence ?? toIndex + 1;
+      if (seqFrom >= seqTo) return false;
+
+      // Both FROM and TO stations must be actual scheduled stops (is_stop = true)
+      if (!isPassengerStop(fromStop, fromIndex, train.schedule.length)) return false;
+      if (!isPassengerStop(toStop, toIndex, train.schedule.length)) return false;
+
+      return true;
     });
 
     return matches.map((t) => {
-      const fromStop = t.schedule.find((s) => s.stationCode.toUpperCase() === fCode);
-      const toStop = t.schedule.find((s) => s.stationCode.toUpperCase() === tCode);
-      if (!fromStop || !toStop) return this.toSummary(t);
+      const fromIndex = t.schedule.findIndex((s) => s.stationCode.toUpperCase() === fCode);
+      const toIndex = t.schedule.findIndex((s) => s.stationCode.toUpperCase() === tCode);
+      const fromStop = t.schedule[fromIndex];
+      const toStop = t.schedule[toIndex];
 
       const distance = Math.max(1, toStop.distanceFromSourceKm - fromStop.distanceFromSourceKm);
       let duration = t.durationMinutes;
@@ -380,13 +428,26 @@ export class MockRailwayProvider implements IRailwayDataProvider {
       };
 
       try {
-        const startMins = parseTimeMins(fromStop.scheduledDeparture || fromStop.scheduledArrival);
-        let endMins = parseTimeMins(toStop.scheduledArrival);
+        const depStr = fromStop.scheduledDeparture && fromStop.scheduledDeparture !== 'START'
+          ? fromStop.scheduledDeparture
+          : fromStop.scheduledArrival;
+        const arrStr = toStop.scheduledArrival && toStop.scheduledArrival !== 'END'
+          ? toStop.scheduledArrival
+          : toStop.scheduledDeparture;
+        const startMins = parseTimeMins(depStr);
+        let endMins = parseTimeMins(arrStr);
         if (endMins < startMins) endMins += 24 * 60;
         duration = endMins - startMins;
       } catch {
         duration = Math.round((distance / 60) * 60);
       }
+
+      const rawDep = fromStop.scheduledDeparture && fromStop.scheduledDeparture !== 'START'
+        ? fromStop.scheduledDeparture
+        : fromStop.scheduledArrival;
+      const rawArr = toStop.scheduledArrival && toStop.scheduledArrival !== 'END'
+        ? toStop.scheduledArrival
+        : toStop.scheduledDeparture;
 
       return {
         ...this.toSummary(t),
@@ -394,8 +455,8 @@ export class MockRailwayProvider implements IRailwayDataProvider {
         sourceName: fromStop.stationName,
         destinationCode: toStop.stationCode,
         destinationName: toStop.stationName,
-        departureTime: fromStop.scheduledDeparture || fromStop.scheduledArrival,
-        arrivalTime: toStop.scheduledArrival,
+        departureTime: formatTo12H(rawDep),
+        arrivalTime: formatTo12H(rawArr),
         durationMinutes: duration,
         distanceKm: distance,
       };
@@ -482,16 +543,203 @@ export class MockRailwayProvider implements IRailwayDataProvider {
     fromCode?: string,
     toCode?: string
   ): Promise<RouteSegment[]> {
-    const segments = MOCK_ROUTE_SEGMENTS[trainNumber] || [];
     if (fromCode && toCode) {
-      return segments.filter(
-        (s) =>
-          s.fromStationCode.toUpperCase() === fromCode.toUpperCase() &&
-          s.toStationCode.toUpperCase() === toCode.toUpperCase()
-      );
+      // Always derive from schedule so ONLY actual scheduled intermediate passenger stops are returned
+      const segResult = await this.getTrainSegment(trainNumber, fromCode, toCode);
+      if (segResult.fromStation.code) {
+        return [{
+          fromStationCode: segResult.fromStation.code,
+          fromStationName: segResult.fromStation.name,
+          toStationCode: segResult.toStation.code,
+          toStationName: segResult.toStation.name,
+          distanceKm: segResult.journeyDistanceKm,
+          intermediateCount: segResult.intermediateStops.length,
+          intermediateStations: segResult.intermediateStops.map((s) => ({
+            stopSequence: s.stopSequence,
+            stationCode: s.stationCode,
+            stationName: s.stationName,
+            scheduledArrival: s.scheduledArrival,
+            scheduledDeparture: s.scheduledDeparture,
+            haltMinutes: s.haltMinutes,
+            distanceFromSourceKm: s.distanceFromSourceKm,
+            dayCount: s.dayCount,
+            // Only pass platform when it is actually available in the data
+            platform: s.platform || undefined,
+            // Pass real values from mockRailwayData if available; do not fabricate
+            speedKmH: (s as any).speedKmH ?? undefined,
+            elevationMeters: (s as any).elevationMeters ?? undefined,
+            zone: (s as any).zone ?? undefined,
+            division: (s as any).division ?? undefined,
+            address: (s as any).address ?? undefined,
+            actionType: (s as any).actionType || (s.haltMinutes > 0 ? 'STOP' : 'PASS'),
+            latitude: s.latitude,
+            longitude: s.longitude,
+          })),
+        }];
+      }
     }
+    const segments = MOCK_ROUTE_SEGMENTS[trainNumber] || [];
     return segments;
   }
+
+
+  async getTrainSegment(
+    trainNumber: string,
+    fromCode: string,
+    toCode: string
+  ): Promise<import('../../types/railway.types.js').TrainSegmentResult> {
+    const fCode = fromCode.toUpperCase();
+    const tCode = toCode.toUpperCase();
+
+    const train = MOCK_TRAINS.find((t) => t.trainNumber === trainNumber);
+    if (!train) {
+      return {
+        trainNumber,
+        trainName: 'Unknown',
+        fromStation: { code: fCode, name: fCode, scheduledDeparture: '--:--', distanceFromSourceKm: 0 },
+        toStation: { code: tCode, name: tCode, scheduledArrival: '--:--', distanceFromSourceKm: 0 },
+        journeyDistanceKm: 0,
+        journeyDurationMinutes: 0,
+        intermediateStops: [],
+        hasIntermediateStops: false,
+        message: `Train ${trainNumber} not found.`,
+      };
+    }
+
+    const schedule = train.schedule;
+    const fromIdx = schedule.findIndex((s) => s.stationCode.toUpperCase() === fCode);
+    const toIdx = schedule.findIndex((s) => s.stationCode.toUpperCase() === tCode);
+
+    if (fromIdx === -1 || toIdx === -1 || fromIdx >= toIdx) {
+      return {
+        trainNumber,
+        trainName: train.trainName,
+        fromStation: { code: fCode, name: fCode, scheduledDeparture: '--:--', distanceFromSourceKm: 0 },
+        toStation: { code: tCode, name: tCode, scheduledArrival: '--:--', distanceFromSourceKm: 0 },
+        journeyDistanceKm: 0,
+        journeyDurationMinutes: 0,
+        intermediateStops: [],
+        hasIntermediateStops: false,
+        message: fromIdx === -1
+          ? `Station ${fCode} not found in train schedule.`
+          : toIdx === -1
+          ? `Station ${tCode} not found in train schedule.`
+          : `Direction invalid: ${fCode} is after ${tCode} in this train's route.`,
+      };
+    }
+
+    const isPassengerStop = (s: TrainStop, idx: number, total: number): boolean => {
+      if (typeof s.is_stop === 'boolean') return s.is_stop;
+      if (typeof (s as any).isStop === 'boolean') return (s as any).isStop;
+      if ((s as any).actionType === 'PASS') return false;
+      if (idx === 0 || idx === total - 1) return true;
+      if (s.scheduledArrival === 'START' || s.scheduledDeparture === 'END') return true;
+      return s.haltMinutes > 0;
+    };
+
+    const fromStop = schedule[fromIdx];
+    const toStop = schedule[toIdx];
+
+    if (!isPassengerStop(fromStop, fromIdx, schedule.length)) {
+      return {
+        trainNumber,
+        trainName: train.trainName,
+        fromStation: { code: fCode, name: fromStop.stationName, scheduledDeparture: '--:--', distanceFromSourceKm: fromStop.distanceFromSourceKm },
+        toStation: { code: tCode, name: toStop.stationName, scheduledArrival: '--:--', distanceFromSourceKm: toStop.distanceFromSourceKm },
+        journeyDistanceKm: 0,
+        journeyDurationMinutes: 0,
+        intermediateStops: [],
+        hasIntermediateStops: false,
+        message: `Train ${trainNumber} passes through ${fromStop.stationName} without a scheduled passenger stop.`,
+      };
+    }
+
+    if (!isPassengerStop(toStop, toIdx, schedule.length)) {
+      return {
+        trainNumber,
+        trainName: train.trainName,
+        fromStation: { code: fCode, name: fromStop.stationName, scheduledDeparture: '--:--', distanceFromSourceKm: fromStop.distanceFromSourceKm },
+        toStation: { code: tCode, name: toStop.stationName, scheduledArrival: '--:--', distanceFromSourceKm: toStop.distanceFromSourceKm },
+        journeyDistanceKm: 0,
+        journeyDurationMinutes: 0,
+        intermediateStops: [],
+        hasIntermediateStops: false,
+        message: `Train ${trainNumber} passes through ${toStop.stationName} without a scheduled passenger stop.`,
+      };
+    }
+
+    // Only include intermediate stops where the train actually stops for passengers
+    const intermediateStops = schedule
+      .slice(fromIdx + 1, toIdx)
+      .filter((s, i) => isPassengerStop(s, fromIdx + 1 + i, schedule.length));
+
+    const journeyDistanceKm = Math.max(0, toStop.distanceFromSourceKm - fromStop.distanceFromSourceKm);
+
+    // Calculate duration
+    const parseTimeMins = (str?: string): number => {
+      if (!str || str === 'START' || str === 'END' || str === '--') return 0;
+      const clean = str.trim().toUpperCase();
+      const isPm = clean.includes('PM');
+      const isAm = clean.includes('AM');
+      const [hStr, mStr] = clean.replace(/[APM ]/g, '').split(':');
+      let h = parseInt(hStr, 10);
+      const m = parseInt(mStr || '0', 10);
+      if (isPm && h < 12) h += 12;
+      if (isAm && h === 12) h = 0;
+      return h * 60 + m;
+    };
+
+    const depMins = parseTimeMins(fromStop.scheduledDeparture || fromStop.scheduledArrival);
+    let arrMins = parseTimeMins(toStop.scheduledArrival || toStop.scheduledDeparture);
+    if (arrMins < depMins) arrMins += 24 * 60; // midnight crossing
+    const journeyDurationMinutes = arrMins - depMins;
+
+    const formatTo12H = (str?: string): string => {
+      if (!str || str === 'START' || str === 'END' || str === '--') return '--:--';
+      const clean = str.trim().toUpperCase();
+      if (clean.includes('AM') || clean.includes('PM')) return clean;
+      const parts = clean.split(':');
+      if (parts.length < 2) return clean;
+      let h = parseInt(parts[0], 10);
+      const m = parts[1].slice(0, 2);
+      if (isNaN(h)) return clean;
+      const ampm = h >= 12 ? 'PM' : 'AM';
+      h = h % 12 || 12;
+      const hStr = h < 10 ? `0${h}` : `${h}`;
+      return `${hStr}:${m} ${ampm}`;
+    };
+
+    return {
+      trainNumber,
+      trainName: train.trainName,
+      fromStation: {
+        code: fromStop.stationCode,
+        name: fromStop.stationName,
+        scheduledDeparture: formatTo12H(fromStop.scheduledDeparture || fromStop.scheduledArrival),
+        distanceFromSourceKm: fromStop.distanceFromSourceKm,
+        platform: fromStop.platform,
+      },
+      toStation: {
+        code: toStop.stationCode,
+        name: toStop.stationName,
+        scheduledArrival: formatTo12H(toStop.scheduledArrival || toStop.scheduledDeparture),
+        distanceFromSourceKm: toStop.distanceFromSourceKm,
+        platform: toStop.platform,
+      },
+      journeyDistanceKm,
+      journeyDurationMinutes,
+      intermediateStops: intermediateStops.map((s) => ({
+        ...s,
+        scheduledArrival: formatTo12H(s.scheduledArrival),
+        scheduledDeparture: formatTo12H(s.scheduledDeparture),
+      })),
+      hasIntermediateStops: intermediateStops.length > 0,
+      message: intermediateStops.length === 0
+        ? `No intermediate station is present between ${fromStop.stationName} and ${toStop.stationName}.`
+        : undefined,
+    };
+  }
+
 
   async getTrainOperations(
     stationCode?: string,
@@ -606,7 +854,8 @@ export class MockRailwayProvider implements IRailwayDataProvider {
           u.trainNumber === trainNumber &&
           u.stationCode.toUpperCase() === stop.stationCode.toUpperCase()
       );
-      const platform = userUpdate ? userUpdate.newPlatform : (stop.platform || '1');
+      // Platform: only use actual data; do not fabricate platform '1' if not set
+      const platform = userUpdate ? userUpdate.newPlatform : (stop.platform || undefined);
 
       return {
         index: idx + 1,
@@ -623,11 +872,12 @@ export class MockRailwayProvider implements IRailwayDataProvider {
         platform,
         day: stop.dayCount || 1,
         distanceKm: stop.distanceFromSourceKm,
-        speedKmH: (stop as any).speedKmH || 77,
-        elevationMeters: (stop as any).elevationMeters || 12,
-        zone: (stop as any).zone || train.zone || 'WR',
-        division: (stop as any).division || 'Mumbai',
-        address: (stop as any).address || `${stop.stationName}, India`,
+        // Only use actual data; do not fabricate values when not present
+        speedKmH: (stop as any).speedKmH ?? undefined,
+        elevationMeters: (stop as any).elevationMeters ?? undefined,
+        zone: (stop as any).zone ?? undefined,
+        division: (stop as any).division ?? undefined,
+        address: (stop as any).address ?? undefined,
         isIntermediate: false,
         isCompleted: idx < 2,
         isCurrent: idx === 2,

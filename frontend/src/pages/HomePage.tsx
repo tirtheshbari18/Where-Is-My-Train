@@ -14,6 +14,7 @@ import { TrainCard } from '../components/trains/TrainCard.js';
 import { ExpressSearchCard } from '../components/home/ExpressSearchCard.js';
 import { RecentSearchesCard } from '../components/home/RecentSearchesCard.js';
 import { StationDepartureBoardCard } from '../components/home/StationDepartureBoardCard.js';
+import { ExploreCard } from '../components/home/ExploreCard.js';
 import { LocalsView } from '../components/home/LocalsView.js';
 import { MetroView } from '../components/home/MetroView.js';
 import { BusView } from '../components/home/BusView.js';
@@ -71,6 +72,9 @@ export const HomePage: React.FC = () => {
 
             {/* 3. Station Departure Board Card */}
             <StationDepartureBoardCard defaultStation="BOR" />
+
+            {/* 4. Explore Section (Section 5) */}
+            <ExploreCard />
 
             {/* 4. Popular Trains Grid */}
             <section className="pt-2">

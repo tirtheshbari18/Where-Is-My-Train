@@ -6,14 +6,21 @@ export type TrainType =
   | 'Vande Bharat'
   | 'Rajdhani'
   | 'Shatabdi'
+  | 'Jan Shatabdi'
   | 'Superfast'
+  | 'Weekly Superfast'
   | 'Express'
+  | 'Mail Express'
+  | 'Weekly Express'
+  | 'Daily Express'
+  | 'Intercity Express'
+  | 'Sampark Kranti'
+  | 'Double Decker'
   | 'Duronto'
   | 'Tejas'
   | 'Garib Rath'
-  | 'Jan Shatabdi'
-  | 'Antyodaya'
   | 'Humsafar'
+  | 'Antyodaya'
   | 'Passenger'
   | 'Special'
   | 'Fast Local'
@@ -21,7 +28,10 @@ export type TrainType =
   | 'AC Local'
   | 'Local'
   | 'MEMU'
-  | 'DEMU';
+  | 'DEMU'
+  | 'EMU'
+  | 'Metro'
+  | 'Bus';
 
 export interface StationLocation {
   code: string;
@@ -84,6 +94,9 @@ export interface TrainStop {
   distanceFromSourceKm: number;
   dayCount: number;
   platform?: string;
+  platform_number?: string;
+  is_stop?: boolean;
+  sequence_number?: number;
   isCompleted?: boolean;
   isCurrent?: boolean;
   latitude: number;
@@ -259,11 +272,13 @@ export interface IntermediateStation {
   distanceFromSourceKm: number;
   dayCount: number;
   platform?: string;
-  speedKmH: number;
-  elevationMeters: number;
-  zone: string;
-  division: string;
-  address: string;
+  // Optional metadata: only populated when the provider genuinely supplies it.
+  // Never fabricate these — the UI shows "Not available" when absent.
+  speedKmH?: number;
+  elevationMeters?: number;
+  zone?: string;
+  division?: string;
+  address?: string;
   actionType: IntermediateActionType;
   latitude: number;
   longitude: number;
@@ -373,3 +388,30 @@ export interface DetailedTimetableRow {
   isCurrent?: boolean;
 }
 
+/**
+ * Result returned by GET /api/trains/:number/segment?from=&to=
+ * Contains stops only between the two selected stations (exclusive of from/to boundaries).
+ */
+export interface TrainSegmentResult {
+  trainNumber: string;
+  trainName: string;
+  fromStation: {
+    code: string;
+    name: string;
+    scheduledDeparture: string;
+    distanceFromSourceKm: number;
+    platform?: string;
+  };
+  toStation: {
+    code: string;
+    name: string;
+    scheduledArrival: string;
+    distanceFromSourceKm: number;
+    platform?: string;
+  };
+  journeyDistanceKm: number;
+  journeyDurationMinutes: number;
+  intermediateStops: TrainStop[];
+  hasIntermediateStops: boolean;
+  message?: string;
+}

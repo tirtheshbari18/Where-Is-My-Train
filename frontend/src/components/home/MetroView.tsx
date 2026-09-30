@@ -1,13 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { ArrowUpDown, Train, Clock, Layers } from 'lucide-react';
 import { metroService, MetroLineItem, MetroRoutePlan, MetroIndicatorTrain } from '../../services/metroService.js';
+import { useRequestGuard } from '../../hooks/useRequestGuard.js';
 
 export const MetroView: React.FC = () => {
+  const routeGuard = useRequestGuard();
+  const indicatorGuard = useRequestGuard();
   const [lines, setLines] = useState<MetroLineItem[]>([]);
   const [fromStation, setFromStation] = useState('Versova');
   const [toStation, setToStation] = useState('Ghatkopar');
   const [routePlan, setRoutePlan] = useState<MetroRoutePlan | null>(null);
   const [searching, setSearching] = useState(false);
+  const [searchAttempted, setSearchAttempted] = useState(false);
 
   // Station indicator
   const [indicatorStation, setIndicatorStation] = useState('Ghatkopar');
@@ -28,20 +32,29 @@ export const MetroView: React.FC = () => {
   }, []);
 
   const handleFindMetro = async () => {
+    const reqId = routeGuard.next();
     setSearching(true);
+    setSearchAttempted(true);
     try {
       const plan = await metroService.searchRoute(fromStation, toStation);
+      if (!routeGuard.isCurrent(reqId)) return;
       setRoutePlan(plan);
     } catch {
       // ignore
     } finally {
-      setSearching(false);
+      if (routeGuard.isCurrent(reqId)) setSearching(false);
     }
   };
 
   const loadIndicator = async (stn: string) => {
-    const data = await metroService.getStationIndicator(stn);
-    setIndicatorData(data);
+    const reqId = indicatorGuard.next();
+    try {
+      const data = await metroService.getStationIndicator(stn);
+      if (!indicatorGuard.isCurrent(reqId)) return;
+      setIndicatorData(data);
+    } catch {
+      // ignore
+    }
   };
 
   const handleSwap = () => {
@@ -153,6 +166,11 @@ export const MetroView: React.FC = () => {
       </div>
 
       {/* Metro Route Result Card */}
+      {searchAttempted && !searching && !routePlan && (
+        <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-200 dark:border-slate-800 text-center text-xs text-slate-400">
+          No metro route found between those stations. Check the station names and try again.
+        </div>
+      )}
       {routePlan && (
         <div className="bg-white dark:bg-slate-900 rounded-3xl p-5 border border-slate-200 dark:border-slate-800 shadow-xl space-y-4">
           <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">

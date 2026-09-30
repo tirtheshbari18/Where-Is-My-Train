@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Train,
   Check,
@@ -6,6 +7,8 @@ import {
   Radio,
   ChevronDown,
   ChevronUp,
+  ChevronRight,
+  X,
   ExternalLink,
   RefreshCw,
   Gauge,
@@ -15,6 +18,7 @@ import {
   ShieldCheck,
   MapPin,
   Clock,
+  Award,
 } from 'lucide-react';
 import {
   TrainStop,
@@ -24,7 +28,9 @@ import {
   RunningStatus,
 } from '../../api/railwayApi.js';
 import { platformVoteService, PlatformVoteResult } from '../../services/platformVoteService.js';
+import { isDemoSource } from '../../services/trackingService.js';
 import { useTranslation } from '../../context/LanguageContext.js';
+import { LiveTrackingStatusBanner } from './LiveTrackingStatusBanner.js';
 
 interface Props {
   stops: TrainStop[];
@@ -57,6 +63,11 @@ interface Props {
   onOperationClick?: (operation: TrainOperation) => void;
   onRefreshStatus?: () => void;
   isRefreshingStatus?: boolean;
+  /** Controlled "Inside this train" state (owned by TrainDetailsPage so it survives tab switches). */
+  insideTrain: boolean;
+  onToggleInsideTrain: () => void;
+  /** Journey start date (YYYY-MM-DD) used to label DAY dividers. */
+  journeyDate?: string;
 }
 
 // Helper: Format 24-hr time '04:45' to '4:45 AM'
@@ -98,6 +109,52 @@ function getDelayedTime(timeStr: string | undefined, delayMinutes: number): stri
   return formatDisplayTime(`${newHours}:${paddedMinutes}`);
 }
 
+// Helper: Describe how long ago an ISO timestamp was, without inventing precision
+function formatAgo(iso?: string): string {
+  if (!iso) return 'Update time unknown';
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return 'Update time unknown';
+  const seconds = Math.max(0, Math.round((Date.now() - then) / 1000));
+  if (seconds < 60) return `Updated ${seconds}s ago`;
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `Updated ${minutes} min ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `Updated ${hours} hr ago`;
+  return `Updated ${Math.round(hours / 24)} d ago`;
+}
+
+// Human-readable community verification state — always derived from real counts.
+function verificationBadge(r: PlatformVoteResult | null): { label: string; className: string } {
+  if (!r) {
+    return { label: 'Loading…', className: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300' };
+  }
+  if (!r.available) {
+    return { label: 'Votes unavailable', className: 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300' };
+  }
+  switch (r.verificationStatus) {
+    case 'VERIFIED':
+      return {
+        label: `Verified (${r.yesCount}/${r.totalVotes})`,
+        className: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300',
+      };
+    case 'DISPUTED':
+      return {
+        label: `Disputed (${r.yesCount} yes / ${r.noCount} no)`,
+        className: 'bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300',
+      };
+    case 'INSUFFICIENT_VOTES':
+      return {
+        label: `Awaiting votes (${r.totalVotes} voted)`,
+        className: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300',
+      };
+    default:
+      return {
+        label: 'Not yet verified (0 votes)',
+        className: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300',
+      };
+  }
+}
+
 export const RailwayTimeline: React.FC<Props> = ({
   stops,
   currentIndex,
@@ -115,7 +172,11 @@ export const RailwayTimeline: React.FC<Props> = ({
   onOperationClick,
   onRefreshStatus,
   isRefreshingStatus = false,
+  insideTrain,
+  onToggleInsideTrain,
+  journeyDate,
 }) => {
+  const navigate = useNavigate();
   const { t: _t } = useTranslation();
   const currentTrainRef = useRef<HTMLDivElement | null>(null);
   const stationRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -134,45 +195,137 @@ export const RailwayTimeline: React.FC<Props> = ({
     });
   };
 
-  // "INSIDE THIS TRAIN?" Feature (Section 7)
-  const [insideTrain, setInsideTrain] = useState<boolean>(() => {
-    return localStorage.getItem(`wimt_inside_train_${trainNumber}`) === 'true';
-  });
+  // "INSIDE THIS TRAIN?" Feature (Section 7) — state is owned by TrainDetailsPage
+  // so tracking also drives the auto-refresh interval there.
 
-  const handleToggleInsideTrain = () => {
-    setInsideTrain((prev) => {
-      const next = !prev;
-      localStorage.setItem(`wimt_inside_train_${trainNumber}`, String(next));
-      return next;
-    });
-  };
-
-  // Community Platform Verification (Section 12 & 47)
+  // Community Platform Verification & Achievement Milestone (Sections 18 & 35)
   const currentStop = stops[currentIndex] || stops[0];
   const nextStop = currentIndex < stops.length - 1 ? stops[currentIndex + 1] : stops[stops.length - 1];
   const originStop = stops[0];
   const destStop = stops[stops.length - 1];
-  const currentSpeed = status?.speedKmH ?? 20;
+  const currentSpeed = status?.speedKmH ?? null;
 
   const [platformVoteResult, setPlatformVoteResult] = useState<PlatformVoteResult | null>(null);
+  const [voteBusy, setVoteBusy] = useState(false);
+  const [voteError, setVoteError] = useState<string | null>(null);
+
+  // Platform Contribution Achievement Modal & Toast
+  const [achievementModal, setAchievementModal] = useState<{
+    isOpen: boolean;
+    contributionCount: number;
+    ordinalText: string;
+  } | null>(null);
+  const [contributionToast, setContributionToast] = useState<string | null>(null);
+
+  const triggerContributionMilestone = () => {
+    const USER_CONTRIBUTIONS_KEY = 'wimt_user_contributions';
+    const currentCount = parseInt(localStorage.getItem(USER_CONTRIBUTIONS_KEY) || '49', 10);
+    const newCount = (isNaN(currentCount) ? 49 : currentCount) + 1;
+    localStorage.setItem(USER_CONTRIBUTIONS_KEY, String(newCount));
+    const s = ['th', 'st', 'nd', 'rd'];
+    const v = newCount % 100;
+    const ordinalText = `${newCount}${s[(v - 20) % 10] || s[v] || s[0]}`;
+    setAchievementModal({
+      isOpen: true,
+      contributionCount: newCount,
+      ordinalText,
+    });
+    setContributionToast("Thanks for your contribution. It'll help millions of passengers");
+    setTimeout(() => {
+      setContributionToast(null);
+    }, 4500);
+  };
 
   useEffect(() => {
-    if (currentStop) {
-      platformVoteService
-        .getVotes(trainNumber, currentStop.stationCode, currentStop.platform || '1')
-        .then(setPlatformVoteResult);
-    }
-  }, [trainNumber, currentStop?.stationCode]);
+    if (!currentStop) return;
+    let cancelled = false;
+    platformVoteService
+      .getVotes(trainNumber, currentStop.stationCode, currentStop.platform, journeyDate)
+      .then((res) => {
+        if (!cancelled) setPlatformVoteResult(res);
+      })
+      .catch(() => {
+        /* vote totals are optional — keep whatever we had */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [trainNumber, currentStop?.stationCode, currentStop?.platform, journeyDate]);
 
   const handlePlatformVote = async (vote: 'YES' | 'NO' | 'NOT_SURE') => {
-    if (!currentStop) return;
-    const res = await platformVoteService.submitVote(
-      trainNumber,
-      currentStop.stationCode,
-      currentStop.platform || '1',
-      vote
-    );
-    setPlatformVoteResult(res);
+    if (!currentStop || voteBusy) return;
+    setVoteBusy(true);
+    setVoteError(null);
+    try {
+      const res = await platformVoteService.submitVote(
+        trainNumber,
+        currentStop.stationCode,
+        currentStop.platform,
+        vote,
+        journeyDate
+      );
+      setPlatformVoteResult(res);
+      if (vote === 'YES' || vote === 'NO') {
+        triggerContributionMilestone();
+      }
+    } catch (err) {
+      setVoteError(err instanceof Error ? err.message : 'Your vote could not be saved.');
+    } finally {
+      setVoteBusy(false);
+    }
+  };
+
+  // Compact platform verification popup opened from a "PF n" badge
+  const [votePopup, setVotePopup] = useState<{
+    stationCode: string;
+    stationName: string;
+    platform?: string;
+  } | null>(null);
+  const [popupVotes, setPopupVotes] = useState<PlatformVoteResult | null>(null);
+  const [popupError, setPopupError] = useState<string | null>(null);
+  const [popupBusy, setPopupBusy] = useState(false);
+
+  useEffect(() => {
+    if (!votePopup) return;
+    let cancelled = false;
+    setPopupVotes(null);
+    setPopupError(null);
+    platformVoteService
+      .getVotes(trainNumber, votePopup.stationCode, votePopup.platform, journeyDate)
+      .then((res) => {
+        if (!cancelled) setPopupVotes(res);
+      })
+      .catch(() => {
+        if (!cancelled) setPopupVotes(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [trainNumber, votePopup?.stationCode, votePopup?.platform, journeyDate]);
+
+  const handlePopupVote = async (vote: 'YES' | 'NO' | 'NOT_SURE') => {
+    if (!votePopup || popupBusy) return;
+    setPopupBusy(true);
+    setPopupError(null);
+    try {
+      const res = await platformVoteService.submitVote(
+        trainNumber,
+        votePopup.stationCode,
+        votePopup.platform,
+        vote,
+        journeyDate
+      );
+      setPopupVotes(res);
+      if (vote === 'YES' || vote === 'NO') {
+        triggerContributionMilestone();
+      } else {
+        setVotePopup(null);
+      }
+    } catch (err) {
+      setPopupError(err instanceof Error ? err.message : 'Your vote could not be saved.');
+    } finally {
+      setPopupBusy(false);
+    }
   };
 
   // Expanded intermediate segments: key = `${fromCode}_${toCode}`
@@ -282,19 +435,43 @@ export const RailwayTimeline: React.FC<Props> = ({
 
   return (
     <div className="space-y-4">
+      {/* Authoritative Live Tracking & Error Status Banner (Sections 10, 11, 34) */}
+      <LiveTrackingStatusBanner
+        status={status}
+        onRetry={onRefreshStatus}
+        isRetrying={isRefreshingStatus}
+      />
+
       {/* ============================================================== */}
       {/* REAL-TIME STATUS CARD (Section 5)                              */}
       {/* ============================================================== */}
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm overflow-hidden">
         {/* Route Header */}
-        <div className="bg-gradient-to-r from-blue-700 to-indigo-700 text-white px-4 py-3 flex items-center justify-between">
+        <div className="bg-gradient-to-r from-blue-700 to-indigo-700 text-white px-4 py-3 flex items-center justify-between flex-wrap gap-2">
           <div className="flex items-center gap-2">
             <Train className="w-5 h-5 text-amber-300" />
             <span className="font-black text-sm sm:text-base">
               {originStop?.stationName || 'Source'} → {destStop?.stationName || 'Destination'}
             </span>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            {status ? (
+              isDemoSource(status.source) || /demo|simulat/i.test(status.dataSourceConfidence || '') ? (
+                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-500 text-slate-950 shadow-xs">
+                  Demo Data
+                </span>
+              ) : null
+            ) : (
+              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-800 text-slate-300 border border-slate-700">
+                Live data unavailable
+              </span>
+            )}
+            {status?.updatedAt && (
+              <span className="text-[11px] font-mono text-blue-100 flex items-center gap-1">
+                <Clock className="w-3 h-3 text-blue-200" />
+                {formatAgo(status.updatedAt)}
+              </span>
+            )}
             <span
               className={`px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider shadow-sm ${statusBadge.bg}`}
             >
@@ -366,38 +543,73 @@ export const RailwayTimeline: React.FC<Props> = ({
           </div>
         </div>
 
-        {/* INSIDE THIS TRAIN? Toggle Bar (Section 7) */}
-        <div className="bg-slate-50 dark:bg-slate-800/60 border-t border-slate-100 dark:border-slate-800 px-4 py-2.5 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div
-              className={`w-2.5 h-2.5 rounded-full ${
-                insideTrain ? 'bg-emerald-500 animate-ping' : 'bg-slate-400'
-              }`}
-            />
-            <span className="text-xs font-extrabold text-slate-800 dark:text-slate-200">
-              INSIDE THIS TRAIN?
-            </span>
-            {insideTrain && (
-              <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-950/60 px-2 py-0.5 rounded-full">
-                Active Onboard Journey
+        {/* 24. "INSIDE THIS TRAIN?" SLIDING TOGGLE CARD (Reference Design) */}
+        <div className="bg-slate-50/80 dark:bg-slate-800/60 border-t border-slate-100 dark:border-slate-800 px-4 py-3 flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-black text-slate-900 dark:text-white">
+                Inside this train?
               </span>
-            )}
+              {insideTrain && (
+                <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-950/60 px-2 py-0.5 rounded-full">
+                  Tracking active
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+              Receive faster train updates
+            </p>
           </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              role="switch"
+              aria-checked={insideTrain}
+              onClick={onToggleInsideTrain}
+              className={`relative inline-flex h-7 w-16 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none shadow-inner items-center px-1 ${
+                insideTrain ? 'bg-emerald-600' : 'bg-slate-300 dark:bg-slate-700'
+              }`}
+              title={`Inside this train is currently ${insideTrain ? 'ON' : 'OFF'}`}
+            >
+              <span
+                className={`text-[10px] font-black uppercase text-white transition-opacity duration-200 ${
+                  insideTrain ? 'ml-1 text-left opacity-100' : 'mr-1 ml-auto text-right opacity-90'
+                }`}
+              >
+                {insideTrain ? 'ON' : 'OFF'}
+              </span>
+              <span
+                className={`pointer-events-none absolute h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+                  insideTrain ? 'right-1' : 'left-1'
+                }`}
+              />
+            </button>
+            <ChevronRight className="w-4 h-4 text-slate-400" />
+          </div>
+        </div>
+
+        {/* Quick Map & Directions Links (Section 14) */}
+        <div className="bg-slate-50/90 dark:bg-slate-800/70 border-t border-slate-100 dark:border-slate-800 px-4 py-2.5 grid grid-cols-1 sm:grid-cols-2 gap-2">
           <button
             type="button"
-            role="switch"
-            aria-checked={insideTrain}
-            onClick={handleToggleInsideTrain}
-            className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-              insideTrain ? 'bg-emerald-600' : 'bg-slate-300 dark:bg-slate-700'
-            }`}
+            onClick={() => navigate(`/map?train=${trainNumber}`)}
+            className="py-2 px-3 rounded-xl bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-900/60 text-blue-700 dark:text-blue-300 font-bold text-xs flex items-center justify-center gap-1.5 hover:bg-blue-100 dark:hover:bg-blue-900/50 transition active:scale-98"
           >
-            <span
-              className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                insideTrain ? 'translate-x-5' : 'translate-x-0'
-              }`}
-            />
+            <MapPin className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+            <span>View your journey in Map</span>
           </button>
+          <a
+            href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(
+              (destStop?.stationName || 'Dahanu Road') + ' Railway Station'
+            )}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="py-2 px-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900/60 text-emerald-700 dark:text-emerald-300 font-bold text-xs flex items-center justify-center gap-1.5 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 transition active:scale-98"
+          >
+            <ExternalLink className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+            <span>View directions in Google Maps</span>
+          </a>
         </div>
       </div>
 
@@ -406,24 +618,40 @@ export const RailwayTimeline: React.FC<Props> = ({
       {/* ============================================================== */}
       {currentStop && (
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-sm space-y-2.5">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2">
-              <ShieldCheck className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-              <span className="text-xs font-black text-slate-800 dark:text-slate-200">
-                Is "Platform {currentStop.platform || '1'}" correct at {currentStop.stationName}?
-              </span>
+              <ShieldCheck className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
+              <div>
+                <span className="text-xs font-black text-slate-800 dark:text-slate-200 block">
+                  {currentStop.platform
+                    ? `Is "Platform ${currentStop.platform}" correct at ${currentStop.stationName}?`
+                    : `Which platform does this train use at ${currentStop.stationName}?`}
+                </span>
+                <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium">
+                  Stops here most of the time
+                </span>
+              </div>
             </div>
-            {platformVoteResult?.isCommunityVerified && (
-              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
-                Community Verified ({platformVoteResult.yesCount}/{platformVoteResult.totalVotes})
-              </span>
-            )}
+            <span
+              className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${verificationBadge(
+                platformVoteResult
+              ).className}`}
+            >
+              {verificationBadge(platformVoteResult).label}
+            </span>
           </div>
+
+          {!currentStop.platform && (
+            <p className="text-[11px] text-slate-500 dark:text-slate-400">
+              No platform announced for this station yet — your vote will help confirm it.
+            </p>
+          )}
 
           <div className="flex items-center gap-2">
             <button
               onClick={() => handlePlatformVote('YES')}
-              className={`flex-1 py-1.5 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 ${
+              disabled={voteBusy}
+              className={`flex-1 py-1.5 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 disabled:opacity-60 ${
                 platformVoteResult?.userVoted === 'YES'
                   ? 'bg-emerald-600 text-white shadow-sm'
                   : 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 hover:bg-emerald-100'
@@ -434,7 +662,8 @@ export const RailwayTimeline: React.FC<Props> = ({
             </button>
             <button
               onClick={() => handlePlatformVote('NO')}
-              className={`flex-1 py-1.5 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 ${
+              disabled={voteBusy}
+              className={`flex-1 py-1.5 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 disabled:opacity-60 ${
                 platformVoteResult?.userVoted === 'NO'
                   ? 'bg-red-600 text-white shadow-sm'
                   : 'bg-red-50 dark:bg-red-950/40 text-red-800 dark:text-red-300 hover:bg-red-100'
@@ -445,7 +674,8 @@ export const RailwayTimeline: React.FC<Props> = ({
             </button>
             <button
               onClick={() => handlePlatformVote('NOT_SURE')}
-              className={`flex-1 py-1.5 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 ${
+              disabled={voteBusy}
+              className={`flex-1 py-1.5 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 disabled:opacity-60 ${
                 platformVoteResult?.userVoted === 'NOT_SURE'
                   ? 'bg-slate-700 text-white shadow-sm'
                   : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200'
@@ -455,6 +685,28 @@ export const RailwayTimeline: React.FC<Props> = ({
               <span>NOT SURE</span>
             </button>
           </div>
+
+          <div className="flex items-center justify-between gap-2 text-[10px] text-slate-400 dark:text-slate-500">
+            <span>
+              {platformVoteResult
+                ? `${platformVoteResult.yesCount} yes • ${platformVoteResult.noCount} no • ${platformVoteResult.notSureCount} not sure`
+                : 'Loading vote totals…'}
+            </span>
+            <span>
+              {platformVoteResult?.lastUpdatedAt
+                ? `Last updated ${new Date(platformVoteResult.lastUpdatedAt).toLocaleString('en-IN', {
+                    day: 'numeric',
+                    month: 'short',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  })}`
+                : 'No community votes recorded yet'}
+            </span>
+          </div>
+
+          {voteError && (
+            <p className="text-[11px] font-semibold text-red-600 dark:text-red-400">{voteError}</p>
+          )}
         </div>
       )}
 
@@ -593,12 +845,30 @@ export const RailwayTimeline: React.FC<Props> = ({
             const isSegmentExpanded = !!expandedSegments[segmentKey];
             const intermediateCount = segment?.intermediateCount || 0;
 
-            // Effective platform (from user platform updates if edited)
+            // Effective platform (from user platform updates if edited).
+            // No fabricated default: an unknown platform stays undefined and its badge is hidden.
             const userPlatform = platformUpdates.find(
               (p) => p.stationCode.toUpperCase() === stop.stationCode.toUpperCase()
             );
-            const displayPlatform = userPlatform ? userPlatform.newPlatform : (stop.platform || '--');
+            const displayPlatform = userPlatform ? userPlatform.newPlatform : stop.platform;
             const isUserUpdatedPlatform = !!userPlatform;
+
+            // DAY divider when the journey rolls over to the next calendar day
+            const dayNum = stop.dayCount;
+            const showDayDivider =
+              !!dayNum && (index === 0 || dayNum !== stops[index - 1]?.dayCount);
+            let dayLabel = '';
+            if (showDayDivider && journeyDate) {
+              const base = new Date(`${journeyDate.slice(0, 10)}T00:00:00`);
+              if (!Number.isNaN(base.getTime())) {
+                base.setDate(base.getDate() + (dayNum - 1));
+                dayLabel = base.toLocaleDateString('en-IN', {
+                  weekday: 'short',
+                  day: 'numeric',
+                  month: 'short',
+                });
+              }
+            }
 
             // Operations at this station (Dynamic, NO limit!)
             const stationOps = getOperationsForStation(stop.stationCode);
@@ -616,6 +886,23 @@ export const RailwayTimeline: React.FC<Props> = ({
 
             return (
               <React.Fragment key={`${stop.stationCode}_${stop.stopSequence}`}>
+                {/* 22.5 DAY HEADER FOR MULTI-DAY JOURNEYS (3-Column Aligned Dark Header) */}
+                {showDayDivider && (
+                  <div className="my-2.5 overflow-hidden rounded-xl bg-slate-900 dark:bg-slate-950 text-white shadow-md border border-slate-800">
+                    <div className="flex items-center justify-between py-2 px-2 sm:px-3 text-xs font-black tracking-wider uppercase">
+                      <div className="w-20 sm:w-24 text-right pr-2 sm:pr-3 text-slate-400 font-bold">
+                        Arrival
+                      </div>
+                      <div className="flex-1 text-center font-black text-amber-300 text-xs sm:text-sm tracking-wide">
+                        Day {dayNum}{dayLabel ? ` - ${dayLabel}` : ''}
+                      </div>
+                      <div className="w-20 sm:w-24 text-left pl-2 sm:pl-3 text-slate-400 font-bold">
+                        Departure
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 {/* STATION ROW (3 COLUMNS: LEFT = ARRIVAL, CENTER = LINE & STATION, RIGHT = DEPARTURE) */}
                 <div
                   id={`timeline-station-${stop.stationCode}`}
@@ -715,16 +1002,34 @@ export const RailwayTimeline: React.FC<Props> = ({
                         </span>
                       </div>
 
-                      {/* Distance & Platform with [ADD ✎] Button */}
+                      {/* Distance & Platform Badge */}
                       <div className="flex items-center gap-2 flex-wrap text-xs text-slate-500 dark:text-slate-400 mt-1">
                         <span className="font-semibold text-slate-600 dark:text-slate-300">
                           {stop.distanceFromSourceKm} km
                         </span>
                         <span>•</span>
-                        <div className="flex items-center gap-1">
-                          <span className="font-bold text-slate-800 dark:text-slate-200">
-                            PF {displayPlatform}
-                          </span>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {displayPlatform ? (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setVotePopup({
+                                  stationCode: stop.stationCode,
+                                  stationName: stop.stationName,
+                                  platform: displayPlatform,
+                                });
+                              }}
+                              className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-xs font-black bg-blue-100 dark:bg-blue-950/80 text-blue-900 dark:text-blue-200 border border-blue-300 dark:border-blue-700 hover:bg-blue-200 dark:hover:bg-blue-900 transition-colors shadow-2xs cursor-pointer"
+                              title={`Click to view platform verification and vote (Platform ${displayPlatform})`}
+                            >
+                              PF {displayPlatform}
+                            </button>
+                          ) : (
+                            <span className="text-[11px] text-slate-400 dark:text-slate-500 italic">
+                              Platform not available
+                            </span>
+                          )}
                           {isUserUpdatedPlatform && (
                             <span className="text-[10px] font-black uppercase px-1.5 py-0.2 rounded bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 border border-amber-300 dark:border-amber-700">
                               User updated
@@ -860,7 +1165,7 @@ export const RailwayTimeline: React.FC<Props> = ({
                                   {stop.stationName} → {nextStationStop.stationName}
                                 </p>
                                 <span className="text-[11px] text-blue-200/80">
-                                  Updated few seconds ago
+                                  {formatAgo(status?.updatedAt)}
                                 </span>
                               </div>
                             </div>
@@ -869,7 +1174,7 @@ export const RailwayTimeline: React.FC<Props> = ({
                             <div className="shrink-0 flex flex-col items-center">
                               <div className="w-14 h-14 rounded-2xl bg-slate-950 border-2 border-blue-400 flex flex-col items-center justify-center shadow-lg">
                                 <span className="text-base font-black leading-none font-mono text-cyan-300">
-                                  {currentSpeed}
+                                  {currentSpeed ?? '—'}
                                 </span>
                                 <span className="text-[9px] font-bold uppercase tracking-wider text-blue-200 mt-0.5">
                                   kmph
@@ -919,8 +1224,8 @@ export const RailwayTimeline: React.FC<Props> = ({
 
                       {/* EXPANDED INTERMEDIATE STATIONS INSIDE TIMELINE (Section 13, 14, 16) */}
                       {isSegmentExpanded && segment && segment.intermediateStations.length > 0 && (
-                        <div className="relative z-10 ml-6 sm:ml-8 mt-2 space-y-2 border-l-2 border-dashed border-blue-400 pl-3 py-2 bg-slate-50/70 dark:bg-slate-950/50 rounded-r-2xl animate-fade-in">
-                          <div className="flex items-center justify-between text-xs font-bold text-blue-900 dark:text-blue-300 pb-1 border-b border-slate-200 dark:border-slate-800">
+                        <div className="relative z-10 ml-6 sm:ml-8 mt-2 space-y-2 border-l-2 border-dashed border-slate-300 dark:border-slate-700 pl-3 py-2 bg-slate-50/70 dark:bg-slate-950/50 rounded-r-2xl animate-fade-in">
+                          <div className="flex items-center justify-between text-xs font-bold text-slate-600 dark:text-slate-300 pb-1 border-b border-slate-200 dark:border-slate-800">
                             <span>
                               Intermediate Stations ({segment.intermediateStations.length})
                             </span>
@@ -943,6 +1248,7 @@ export const RailwayTimeline: React.FC<Props> = ({
                           {segment.intermediateStations.map((istop, idx) => {
                             const isLast = idx === segment.intermediateStations.length - 1;
                             const istopOps = getOperationsForStation(istop.stationCode);
+                            const istopPassed = index < currentIndex;
 
                             return (
                               <div
@@ -955,59 +1261,120 @@ export const RailwayTimeline: React.FC<Props> = ({
                                     istop.platform
                                   )
                                 }
-                                className="p-2.5 bg-white dark:bg-slate-900 hover:bg-blue-50/70 dark:hover:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-800 hover:border-blue-400 transition cursor-pointer shadow-2xs group"
+                                className={`p-3 rounded-xl border transition cursor-pointer shadow-2xs group ${
+                                  istopPassed
+                                    ? 'bg-slate-100/60 dark:bg-slate-800/40 border-slate-200/70 dark:border-slate-800/70 opacity-85 hover:opacity-100 hover:bg-slate-100 dark:hover:bg-slate-800/70'
+                                    : 'bg-slate-100/90 dark:bg-slate-800/80 border-slate-200/90 dark:border-slate-700/80 hover:border-slate-300 dark:hover:border-slate-600 hover:bg-slate-200/70 dark:hover:bg-slate-700/60'
+                                }`}
                               >
-                                <div className="flex items-center justify-between">
-                                  <div className="flex items-center gap-2">
+                                <div className="flex items-center justify-between gap-2">
+                                  <div className="flex items-center gap-2 min-w-0">
                                     <span className="font-mono text-slate-400 text-xs font-bold">
                                       {isLast ? '└──' : '├──'}
                                     </span>
-                                    <span className="font-mono font-black text-xs text-emerald-900 bg-emerald-100 dark:text-emerald-300 dark:bg-emerald-950/80 px-1.5 py-0.5 rounded border border-emerald-300 dark:border-emerald-800">
+                                    <span className="font-mono font-black text-xs text-slate-700 bg-slate-200 dark:text-slate-300 dark:bg-slate-800 px-1.5 py-0.5 rounded border border-slate-300 dark:border-slate-700">
                                       {istop.stationCode}
                                     </span>
-                                    <h4 className="font-black text-slate-900 dark:text-white text-xs sm:text-sm group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+                                    <h4 className="font-black text-slate-800 dark:text-slate-100 text-xs sm:text-sm truncate group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
                                       {istop.stationName}
                                     </h4>
                                   </div>
 
-                                  <div className="flex items-center gap-2">
-                                    <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
-                                      {istop.actionType || 'PASS'}
+                                  <div className="flex items-center gap-1.5 shrink-0">
+                                    <span
+                                      className={`text-[10px] font-black px-2 py-0.5 rounded-full ${
+                                        istopPassed
+                                          ? 'bg-slate-200 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
+                                          : 'bg-blue-100 text-blue-800 dark:bg-blue-950/70 dark:text-blue-300'
+                                      }`}
+                                    >
+                                      {istopPassed ? 'Passed' : 'Upcoming'}
                                     </span>
-                                    <span className="text-xs font-mono font-bold text-slate-800 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded">
-                                      PF {istop.platform || 'Not available'}
-                                    </span>
+                                    {istop.haltMinutes > 0 ? (
+                                      <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950/70 text-amber-800 dark:text-amber-300">
+                                        {istop.haltMinutes}m halt
+                                      </span>
+                                    ) : (
+                                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-200/70 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
+                                        Pass Through
+                                      </span>
+                                    )}
                                   </div>
                                 </div>
 
-                                {/* Intermediate Full Metrics (Section 16) */}
-                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px] mt-2 pt-2 border-t border-slate-100 dark:border-slate-800 text-slate-600 dark:text-slate-400">
-                                  <div>
-                                    <span className="text-slate-400 block text-[10px]">Arr / Dep</span>
-                                    <span className="font-mono font-bold text-slate-800 dark:text-slate-200">
-                                      {formatDisplayTime(istop.scheduledArrival)} / {formatDisplayTime(istop.scheduledDeparture)}
+                                {/* Arrival / Departure times & Platform */}
+                                {(() => {
+                                  const hasArr = !!istop.scheduledArrival && istop.scheduledArrival !== '--' && istop.scheduledArrival !== 'START';
+                                  const hasDep = !!istop.scheduledDeparture && istop.scheduledDeparture !== '--' && istop.scheduledDeparture !== 'END';
+                                  return (
+                                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs mt-2.5 pt-2 border-t border-slate-200/80 dark:border-slate-700/80">
+                                      {hasArr && (
+                                        <div>
+                                          <span className="text-slate-400 dark:text-slate-500 block text-[10px] uppercase font-bold tracking-wider">
+                                            Arrival
+                                          </span>
+                                          <span className="font-mono font-bold text-slate-800 dark:text-slate-200">
+                                            {formatDisplayTime(istop.scheduledArrival)}
+                                          </span>
+                                        </div>
+                                      )}
+                                      {hasDep && (
+                                        <div>
+                                          <span className="text-slate-400 dark:text-slate-500 block text-[10px] uppercase font-bold tracking-wider">
+                                            Departure
+                                          </span>
+                                          <span className="font-mono font-bold text-slate-800 dark:text-slate-200">
+                                            {formatDisplayTime(istop.scheduledDeparture)}
+                                          </span>
+                                        </div>
+                                      )}
+                                      <div>
+                                        <span className="text-slate-400 dark:text-slate-500 block text-[10px] uppercase font-bold tracking-wider">
+                                          Platform
+                                        </span>
+                                        {istop.platform ? (
+                                          <button
+                                            type="button"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              setVotePopup({
+                                                stationCode: istop.stationCode,
+                                                stationName: istop.stationName,
+                                                platform: istop.platform,
+                                              });
+                                            }}
+                                            className="inline-flex items-center gap-1 font-mono font-bold text-xs text-blue-700 dark:text-blue-300 hover:underline cursor-pointer"
+                                            title={`Verify platform ${istop.platform} at ${istop.stationName}`}
+                                          >
+                                            PF {istop.platform}
+                                          </button>
+                                        ) : (
+                                          <span className="text-slate-400 dark:text-slate-500 text-[11px] italic">
+                                            Platform not available
+                                          </span>
+                                        )}
+                                      </div>
+                                    </div>
+                                  );
+                                })()}
+
+                                {/* Halt / distance, and any genuinely supplied telemetry */}
+                                <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-slate-500 dark:text-slate-400">
+                                  <span>
+                                    {istop.haltMinutes > 0
+                                      ? `${istop.haltMinutes}m halt`
+                                      : 'Pass Through'}{' '}
+                                    &bull; {istop.distanceFromSourceKm || '—'} km
+                                  </span>
+                                  {istop.speedKmH ? <span>{istop.speedKmH} km/h</span> : null}
+                                  {istop.elevationMeters ? (
+                                    <span>{istop.elevationMeters}m elevation</span>
+                                  ) : null}
+                                  {(istop.zone || istop.division) && (
+                                    <span>
+                                      {istop.zone || '—'} / {istop.division || '—'}
                                     </span>
-                                  </div>
-                                  <div>
-                                    <span className="text-slate-400 block text-[10px]">Halt / Distance</span>
-                                    <span className="font-mono text-slate-800 dark:text-slate-200">
-                                      {istop.haltMinutes > 0 ? `${istop.haltMinutes}m halt` : 'Pass Through'} &bull;{' '}
-                                      {istop.distanceFromSourceKm || 'Not available'} km
-                                    </span>
-                                  </div>
-                                  <div>
-                                    <span className="text-slate-400 block text-[10px]">Speed & Elevation</span>
-                                    <span className="font-mono font-bold text-blue-600 dark:text-blue-400">
-                                      {istop.speedKmH ? `${istop.speedKmH} km/h` : 'Not available'} &bull;{' '}
-                                      {istop.elevationMeters ? `${istop.elevationMeters}m` : 'Not available'}
-                                    </span>
-                                  </div>
-                                  <div>
-                                    <span className="text-slate-400 block text-[10px]">Zone / Division</span>
-                                    <span className="text-slate-700 dark:text-slate-300 font-semibold">
-                                      {istop.zone || 'Not available'} / {istop.division || 'Not available'}
-                                    </span>
-                                  </div>
+                                  )}
                                 </div>
 
                                 {/* Intermediate Operations */}
@@ -1062,7 +1429,7 @@ export const RailwayTimeline: React.FC<Props> = ({
                 Departed {currentStop?.stationName || 'Source'}
               </h3>
               <p className="text-[11px] text-blue-200/80">
-                Updated few seconds ago &bull; Train #{trainNumber}
+                {formatAgo(status?.updatedAt)} &bull; Train #{trainNumber}
               </p>
             </div>
           </div>
@@ -1114,7 +1481,7 @@ export const RailwayTimeline: React.FC<Props> = ({
         </div>
       </div>
 
-      {/* POPUP MODAL: No intermediate stations present between two stations */}
+      {/* 22.4 POPUP MODAL: No intermediate stations present (Matching Reference Design) */}
       {emptyModalInfo && (
         <div
           role="dialog"
@@ -1123,48 +1490,219 @@ export const RailwayTimeline: React.FC<Props> = ({
           onClick={() => setEmptyModalInfo(null)}
         >
           <div
-            className="bg-white dark:bg-slate-900 border-2 border-blue-500/60 rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-4 animate-scale-in"
+            className="bg-white dark:bg-slate-900 border-2 border-amber-500/60 rounded-3xl max-w-md w-full overflow-hidden shadow-2xl animate-scale-in"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-2xl bg-blue-100 dark:bg-blue-950/80 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0 border border-blue-200 dark:border-blue-800">
-                <Train className="w-6 h-6" />
+            {/* Orange Notification Banner matching reference screenshot */}
+            <div className="bg-gradient-to-r from-amber-500 to-orange-500 text-white font-black text-sm px-5 py-3.5 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <AlertCircle className="w-5 h-5 shrink-0" />
+                <span>No intermediate stations present</span>
               </div>
-              <div className="min-w-0">
-                <h3 className="text-base font-black text-slate-900 dark:text-white">
-                  No Intermediate Stations
-                </h3>
-                <p className="text-xs text-blue-600 dark:text-blue-400 font-bold">
-                  Direct Continuous Track Section
-                </p>
-              </div>
+              <button
+                type="button"
+                onClick={() => setEmptyModalInfo(null)}
+                className="text-white/80 hover:text-white p-1 rounded-lg hover:bg-white/20 transition"
+              >
+                <X className="w-4 h-4" />
+              </button>
             </div>
 
-            <div className="p-4 rounded-2xl bg-blue-50/70 dark:bg-slate-800/80 border border-blue-200 dark:border-slate-700 text-xs text-slate-800 dark:text-slate-200 space-y-2">
-              <p className="leading-relaxed">
-                There is <span className="font-black text-rose-600 dark:text-rose-400">no intermediate station present</span> between{' '}
-                <span className="font-extrabold text-blue-700 dark:text-blue-300">
-                  {emptyModalInfo.fromName} ({emptyModalInfo.fromCode})
-                </span>{' '}
-                and{' '}
-                <span className="font-extrabold text-blue-700 dark:text-blue-300">
-                  {emptyModalInfo.toName} ({emptyModalInfo.toCode})
-                </span>
-                .
-              </p>
-              <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-normal">
-                This is an uninterrupted, continuous railway line block section without any intervening passenger station, halt, or crossing loop.
-              </p>
+            <div className="p-6 space-y-4">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-2xl bg-amber-100 dark:bg-amber-950/80 text-amber-700 dark:text-amber-400 flex items-center justify-center shrink-0 border border-amber-200 dark:border-amber-800">
+                  <Train className="w-6 h-6" />
+                </div>
+                <div className="min-w-0">
+                  <h3 className="text-base font-black text-slate-900 dark:text-white">
+                    No Intermediate Station
+                  </h3>
+                  <p className="text-xs text-amber-600 dark:text-amber-400 font-bold">
+                    Direct Continuous Track Section
+                  </p>
+                </div>
+              </div>
+
+              <div className="p-4 rounded-2xl bg-amber-50/70 dark:bg-slate-800/80 border border-amber-200 dark:border-slate-700 text-xs text-slate-800 dark:text-slate-200 space-y-2">
+                <p className="leading-relaxed">
+                  There is <span className="font-black text-rose-600 dark:text-rose-400">no intermediate station present</span> between{' '}
+                  <strong className="text-slate-900 dark:text-white">
+                    {emptyModalInfo.fromName} ({emptyModalInfo.fromCode})
+                  </strong>{' '}
+                  and{' '}
+                  <strong className="text-slate-900 dark:text-white">
+                    {emptyModalInfo.toName} ({emptyModalInfo.toCode})
+                  </strong>
+                  .
+                </p>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-normal">
+                  This is an uninterrupted, continuous railway block section without any intervening passenger station, halt, or crossing loop.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setEmptyModalInfo(null)}
+                className="w-full py-3 rounded-2xl bg-amber-500 hover:bg-amber-600 active:scale-95 text-white font-black text-xs uppercase tracking-wider transition shadow-lg shadow-amber-500/30"
+              >
+                OK
+              </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* 23.2 POPUP MODAL: Platform Confirmation Popup (Matching Reference Design) */}
+      {votePopup && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Verify platform"
+          className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in"
+          onClick={() => setVotePopup(null)}
+        >
+          <div
+            className="bg-white dark:bg-slate-900 border-2 border-slate-300 dark:border-slate-700 rounded-3xl max-w-sm w-full p-5 shadow-2xl space-y-4 animate-scale-in"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header: Is "Platform X" correct? [X] */}
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <h3 className="text-base font-black text-slate-900 dark:text-white leading-tight">
+                  {votePopup.platform
+                    ? `Is "Platform ${votePopup.platform}" correct?`
+                    : `Which platform at ${votePopup.stationName}?`}
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  {votePopup.stationName} ({votePopup.stationCode})
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setVotePopup(null)}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition shrink-0"
+                aria-label="Close"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Voting Options: Yes | No | Not sure */}
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => handlePopupVote('YES')}
+                disabled={popupBusy}
+                className={`flex-1 py-2.5 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 disabled:opacity-60 ${
+                  popupVotes?.userVoted === 'YES'
+                    ? 'bg-emerald-600 text-white shadow-sm'
+                    : 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 hover:bg-emerald-100'
+                }`}
+              >
+                <ThumbsUp className="w-3.5 h-3.5" />
+                Yes
+              </button>
+              <button
+                type="button"
+                onClick={() => handlePopupVote('NO')}
+                disabled={popupBusy}
+                className={`flex-1 py-2.5 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 disabled:opacity-60 ${
+                  popupVotes?.userVoted === 'NO'
+                    ? 'bg-red-600 text-white shadow-sm'
+                    : 'bg-red-50 dark:bg-red-950/40 text-red-800 dark:text-red-300 hover:bg-red-100'
+                }`}
+              >
+                <ThumbsDown className="w-3.5 h-3.5" />
+                No
+              </button>
+              <button
+                type="button"
+                onClick={() => handlePopupVote('NOT_SURE')}
+                disabled={popupBusy}
+                className={`flex-1 py-2.5 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 disabled:opacity-60 ${
+                  popupVotes?.userVoted === 'NOT_SURE'
+                    ? 'bg-slate-700 text-white shadow-sm'
+                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200'
+                }`}
+              >
+                <HelpCircle className="w-3.5 h-3.5" />
+                Not sure
+              </button>
+            </div>
+
+            {/* Verification Status & Approval Summary matching Section 23.2 */}
+            <div className="text-center py-2 px-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 space-y-1">
+              <div className="text-xs font-black text-slate-800 dark:text-slate-200">
+                {popupVotes && popupVotes.totalVotes > 0
+                  ? `${popupVotes.yesCount}/${popupVotes.totalVotes} people approved this`
+                  : 'No confirmations yet'}
+              </div>
+              {popupVotes?.verificationStatus === 'DISPUTED' && (
+                <div className="text-[11px] font-bold text-red-600 dark:text-red-400">
+                  Platform information disputed
+                </div>
+              )}
+              {popupVotes?.lastUpdatedAt && (
+                <div className="text-[10px] text-slate-400 dark:text-slate-500">
+                  Last updated {new Date(popupVotes.lastUpdatedAt).toLocaleString('en-IN', {
+                    day: 'numeric',
+                    month: 'short',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  })}
+                </div>
+              )}
+            </div>
+
+            {popupError && (
+              <p className="text-[11px] font-semibold text-red-600 dark:text-red-400 text-center">{popupError}</p>
+            )}
 
             <button
               type="button"
-              onClick={() => setEmptyModalInfo(null)}
-              className="w-full py-3 rounded-2xl bg-blue-600 hover:bg-blue-500 active:scale-95 text-white font-black text-xs uppercase tracking-wider transition shadow-lg shadow-blue-600/30"
+              onClick={() => setVotePopup(null)}
+              className="w-full py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 active:scale-95 text-slate-700 dark:text-slate-200 font-bold text-xs uppercase tracking-wider transition"
             >
-              OK, Got It
+              OK
             </button>
           </div>
+        </div>
+      )}
+
+      {/* Contribution Achievement Modal (Section 18 & 35) */}
+      {achievementModal && achievementModal.isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 max-w-sm w-full shadow-2xl text-center space-y-4 animate-in zoom-in-95">
+            <div className="w-16 h-16 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 mx-auto flex items-center justify-center shadow-inner">
+              <Award className="w-9 h-9" />
+            </div>
+            <div>
+              <h2 className="text-2xl font-black text-slate-900 dark:text-white">Thank you!</h2>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                Thank you for helping other travellers with your contribution
+              </p>
+            </div>
+            <div className="py-3 px-4 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-700/50">
+              <span className="text-sm font-extrabold text-amber-900 dark:text-amber-200">
+                This is your {achievementModal.ordinalText} contribution
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setAchievementModal(null)}
+              className="w-full py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-sm shadow-md transition active:scale-95 uppercase tracking-wider"
+            >
+              Continue
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Floating Contribution Toast (Section 18) */}
+      {contributionToast && (
+        <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-50 max-w-md w-11/12 bg-slate-900 text-white px-4 py-3 rounded-2xl shadow-xl border border-slate-700 flex items-center gap-3 toast-enter">
+          <ShieldCheck className="w-5 h-5 text-emerald-400 shrink-0" />
+          <span className="text-xs font-bold">{contributionToast}</span>
         </div>
       )}
     </div>

@@ -149,5 +149,16 @@ export interface IRailwayDataProvider {
   getDetailedTimetable(
     trainNumber: string
   ): Promise<import('../types/railway.types.js').DetailedTimetableRow[]>;
+
+  /**
+   * Get train stops between two selected stations (segment timeline).
+   * Returns only stops that exist between fromCode and toCode in the train schedule.
+   * Direction is validated: fromCode.sequence must be < toCode.sequence.
+   */
+  getTrainSegment(
+    trainNumber: string,
+    fromCode: string,
+    toCode: string
+  ): Promise<import('../types/railway.types.js').TrainSegmentResult>;
 }
 

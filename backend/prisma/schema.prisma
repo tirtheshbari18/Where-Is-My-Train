@@ -124,26 +124,30 @@ model StationPlatform {
   verificationStatus String         @default("VERIFIED") // "VERIFIED", "UNVERIFIED", "COMMUNITY_APPROVED"
 
   station            Station        @relation(fields: [stationCode], references: [code])
-  votes              PlatformVote[]
 
   @@unique([stationCode, platformNumber])
   @@index([stationCode])
 }
 
-// 6. COMMUNITY PLATFORM VOTES
+// 6. COMMUNITY PLATFORM VOTES (persisted, one row per voter per train/station/platform/service-date)
+// NOTE: deliberately no foreign key to StationPlatform so a vote can be recorded for a platform
+// that is not yet present in the master platform table.
 model PlatformVote {
-  id             String           @id @default(uuid())
+  id             String   @id @default(uuid())
   trainNumber    String
   stationCode    String
-  platformNumber String
-  vote           String           // "YES", "NO", "NOT_SURE"
-  source         String           @default("COMMUNITY")
-  ipHash         String?
-  createdAt      DateTime         @default(now())
+  platformNumber String   // "" when the reporter did not know the platform
+  serviceDate    String   @default("") // YYYY-MM-DD journey/service date, "" when unspecified
+  vote           String   // "YES", "NO", "NOT_SURE"
+  source         String   @default("COMMUNITY")
+  ipHash         String   // anonymised voter/session identifier (sha256 of client id + ip + ua)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
-  platform       StationPlatform? @relation(fields: [stationCode, platformNumber], references: [stationCode, platformNumber])
-
+  // Server-side duplicate-vote protection: one row per voter per vote scope.
+  @@unique([trainNumber, stationCode, platformNumber, serviceDate, ipHash])
   @@index([trainNumber, stationCode])
+  @@index([trainNumber, stationCode, platformNumber])
 }
 
 // 7. ROUTE / RAILWAY LINE DATABASE
