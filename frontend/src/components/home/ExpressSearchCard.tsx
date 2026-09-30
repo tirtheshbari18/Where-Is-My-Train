@@ -3,6 +3,8 @@ import { ArrowUpDown, Search, Train } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { StationAutocomplete } from '../common/StationAutocomplete.js';
 import { searchHistoryService } from '../../services/searchHistoryService.js';
+import { extractStationCode } from '../../utils/stationResolver.js';
+import { normalizeDate } from '../../utils/dateNormalizer.js';
 
 interface ExpressSearchCardProps {
   onTrainNumberSearch?: (query: string) => void;
@@ -24,15 +26,19 @@ export const ExpressSearchCard: React.FC<ExpressSearchCardProps> = () => {
 
   const handleFindTrains = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!fromStation || !toStation) return;
+    const cleanFrom = extractStationCode(fromStation);
+    const cleanTo = extractStationCode(toStation);
+    const { isoDate: cleanDate } = normalizeDate(travelDate);
+
+    if (!cleanFrom || !cleanTo) return;
 
     searchHistoryService.addEntry({
-      sourceCode: fromStation,
-      destinationCode: toStation,
+      sourceCode: cleanFrom,
+      destinationCode: cleanTo,
       type: 'ROUTE',
     });
 
-    navigate(`/trains-between?from=${encodeURIComponent(fromStation)}&to=${encodeURIComponent(toStation)}&date=${travelDate}`);
+    navigate(`/trains-between?from=${encodeURIComponent(cleanFrom)}&to=${encodeURIComponent(cleanTo)}&date=${encodeURIComponent(cleanDate)}`);
   };
 
   const handleTrainNumberSearch = (e: React.FormEvent) => {

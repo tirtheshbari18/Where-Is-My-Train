@@ -5,12 +5,17 @@
 const DAY_NAMES_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const DAY_NAMES_LONG = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const MONTH_NAMES_LONG = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December'
+];
 
 export function normalizeDate(inputDate?: string): {
   isoDate: string;
   dayOfWeekShort: string;
   dayOfWeekLong: string;
   formattedDisplay: string;
+  formattedDisplayLong: string;
   isValid: boolean;
 } {
   const today = new Date();
@@ -19,12 +24,14 @@ export function normalizeDate(inputDate?: string): {
   if (!inputDate || !inputDate.trim()) {
     const day = today.getDate();
     const month = MONTH_NAMES[today.getMonth()];
+    const monthLong = MONTH_NAMES_LONG[today.getMonth()];
     const year = today.getFullYear();
     return {
       isoDate: todayIso,
       dayOfWeekShort: DAY_NAMES_SHORT[today.getDay()],
       dayOfWeekLong: DAY_NAMES_LONG[today.getDay()],
       formattedDisplay: `${DAY_NAMES_SHORT[today.getDay()]}, ${day} ${month} ${year}`,
+      formattedDisplayLong: `${day} ${monthLong} ${year}`,
       isValid: true,
     };
   }
@@ -47,6 +54,7 @@ export function normalizeDate(inputDate?: string): {
         dayOfWeekShort: DAY_NAMES_SHORT[dIndex],
         dayOfWeekLong: DAY_NAMES_LONG[dIndex],
         formattedDisplay: `${DAY_NAMES_SHORT[dIndex]}, ${parseInt(day, 10)} ${MONTH_NAMES[mIndex]} ${year}`,
+        formattedDisplayLong: `${parseInt(day, 10)} ${MONTH_NAMES_LONG[mIndex]} ${year}`,
         isValid: true,
       };
     }
@@ -68,6 +76,7 @@ export function normalizeDate(inputDate?: string): {
         dayOfWeekShort: DAY_NAMES_SHORT[dIndex],
         dayOfWeekLong: DAY_NAMES_LONG[dIndex],
         formattedDisplay: `${DAY_NAMES_SHORT[dIndex]}, ${parseInt(day, 10)} ${MONTH_NAMES[mIndex]} ${year}`,
+        formattedDisplayLong: `${parseInt(day, 10)} ${MONTH_NAMES_LONG[mIndex]} ${year}`,
         isValid: true,
       };
     }
@@ -84,6 +93,7 @@ export function normalizeDate(inputDate?: string): {
       dayOfWeekShort: DAY_NAMES_SHORT[dIndex],
       dayOfWeekLong: DAY_NAMES_LONG[dIndex],
       formattedDisplay: `${DAY_NAMES_SHORT[dIndex]}, ${parsed.getDate()} ${MONTH_NAMES[mIndex]} ${parsed.getFullYear()}`,
+      formattedDisplayLong: `${parsed.getDate()} ${MONTH_NAMES_LONG[mIndex]} ${parsed.getFullYear()}`,
       isValid: true,
     };
   }
@@ -95,6 +105,7 @@ export function normalizeDate(inputDate?: string): {
     dayOfWeekShort: DAY_NAMES_SHORT[dIndex],
     dayOfWeekLong: DAY_NAMES_LONG[dIndex],
     formattedDisplay: `${DAY_NAMES_SHORT[dIndex]}, ${today.getDate()} ${MONTH_NAMES[mIndex]} ${today.getFullYear()}`,
+    formattedDisplayLong: `${today.getDate()} ${MONTH_NAMES_LONG[mIndex]} ${today.getFullYear()}`,
     isValid: false,
   };
 }

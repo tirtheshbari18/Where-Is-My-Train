@@ -1,4 +1,6 @@
 // Railway API Client for WHERE IS MY TRAIN
+import { extractStationCode } from '../utils/stationResolver.js';
+import { normalizeDate } from '../utils/dateNormalizer.js';
 
 const API_BASE = '/api';
 
@@ -394,14 +396,15 @@ function toFriendlyError(status: number, json: any): string {
       : typeof json?.message === 'string'
       ? json.message
       : null;
-  if (serverMsg && serverMsg.length <= 200 && !/[A-Za-z]:\\|node_modules|Error: /.test(serverMsg)) {
+  if (serverMsg && serverMsg.length <= 200 && !/[A-Za-z]:\\|node_modules/.test(serverMsg)) {
     return serverMsg;
   }
+  if (status === 400) return 'Invalid railway query parameters. Please check station codes and date.';
   if (status === 401 || status === 403) return 'You are not authorised to perform this action.';
   if (status === 404) return 'The requested railway data was not found.';
   if (status === 429) return 'Too many requests. Please wait a moment and try again.';
-  if (status === 503) return 'Live data is currently unavailable.';
-  if (status >= 500) return 'Unable to load live data. Please try again shortly.';
+  if (status === 503) return 'Unable to connect to railway data service.';
+  if (status >= 500) return 'Unable to connect to railway data service.';
   return `Request failed (status ${status}).`;
 }
 
@@ -415,8 +418,9 @@ async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
   let res: Response;
   try {
     res = await fetch(url, { ...options, headers });
-  } catch {
-    throw new Error('Unable to reach the server. Please check your connection and try again.');
+  } catch (err: any) {
+    console.error(`[RailwayAPI Network Error] ${url}:`, err?.message || err);
+    throw new Error('Unable to connect to railway data service.');
   }
 
   let json: any = null;
@@ -426,10 +430,14 @@ async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
     json = null;
   }
 
+  console.log(`[RailwayAPI] ${options?.method || 'GET'} ${url} -> Status ${res.status}`);
+
   if (!res.ok) {
+    console.error(`[RailwayAPI Error] Status: ${res.status} ${res.statusText}`, json);
     throw new Error(toFriendlyError(res.status, json));
   }
   if (json === null) {
+    console.error(`[RailwayAPI Error] Invalid JSON from ${url}`);
     throw new Error('Received an invalid response from the server.');
   }
   return json;
@@ -486,7 +494,17 @@ export const railwayApi = {
   },
 
   async getTrainsBetween(from: string, to: string, date?: string): Promise<TrainSummary[]> {
-    const url = `${API_BASE}/trains-between?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}${date ? `&date=${date}` : ''}`;
+    const cleanFrom = extractStationCode(from) || from.trim().toUpperCase();
+    const cleanTo = extractStationCode(to) || to.trim().toUpperCase();
+    const cleanDate = date ? normalizeDate(date).isoDate : undefined;
+
+    const queryParts = [
+      `from=${encodeURIComponent(cleanFrom)}`,
+      `to=${encodeURIComponent(cleanTo)}`,
+    ];
+    if (cleanDate) queryParts.push(`date=${encodeURIComponent(cleanDate)}`);
+
+    const url = `${API_BASE}/trains-between?${queryParts.join('&')}`;
     const res = await fetchJson<{ success: boolean; data: TrainSummary[] }>(url);
     return res.data;
   },

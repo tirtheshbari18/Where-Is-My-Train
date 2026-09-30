@@ -188,7 +188,7 @@ export const TrainCard: React.FC<Props> = ({ train, onFavouriteToggle, highlight
             ) : (
               <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
                 <span className="w-1.5 h-1.5 rounded-full bg-slate-400"></span>
-                <span>● ON TIME</span>
+                <span>SCHEDULED</span>
               </span>
             )}
 
