@@ -299,6 +299,11 @@ The repo root is the Vercel project. The root `vercel.json` wires everything tog
 | Build Command | `npm run build` (compiles `backend` with `tsc`, then builds `frontend` with Vite) |
 | Output Directory | `frontend/dist` |
 
+> **`install:all` must keep `--include=dev`.** Vercel builds run with `NODE_ENV=production`,
+> and plain `npm install` responds to that by **skipping every `devDependency`** — which is
+> exactly where `typescript`, `vite`, `tailwindcss` and `prisma` live. The build then dies with
+> `tsc: not found`. `--include=dev` forces them back in and is harmless everywhere else.
+
 Routing defined in `vercel.json`:
 
 - `/api/*` → `api/index.js`, a Node serverless function that exports the compiled
