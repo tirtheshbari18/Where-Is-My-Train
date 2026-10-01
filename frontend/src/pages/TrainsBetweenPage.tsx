@@ -2,7 +2,7 @@
 // Comprehensive Indian Railways Train Search & Tracking Page
 // UX aligned with modern "Where Is My Train" app.
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
   Calendar,
@@ -13,8 +13,13 @@ import {
   ArrowUpDown,
   Search,
   RefreshCw,
+  Radio,
 } from 'lucide-react';
-import { railwayApi, TrainSummary, isConnectionError } from '../api/railwayApi.js';
+import {
+  railwayApi,
+  TrainSummary,
+  isConnectionError,
+} from '../api/railwayApi.js';
 import { getFallbackTrainsBetween } from '../api/fallbackRailwayData.js';
 import { TrainCard } from '../components/trains/TrainCard.js';
 import { StationAutocomplete } from '../components/common/StationAutocomplete.js';
@@ -22,10 +27,14 @@ import { offlineStorageService } from '../services/offlineStorageService.js';
 import { searchHistoryService } from '../services/searchHistoryService.js';
 import { useRequestGuard } from '../hooks/useRequestGuard.js';
 import { matchesCategory } from '../utils/trainCategory.js';
-import { normalizeDate } from '../utils/dateNormalizer.js';
+import {
+  normalizeDate,
+  getTodayInKolkata,
+  parseTimeToMinutes,
+} from '../utils/dateNormalizer.js';
 import { extractStationCode } from '../utils/stationResolver.js';
 
-// Category filter pills matching prompt specification
+// Category filter pills matching specification
 const FILTER_CLASSES = [
   'ALL',
   'EXPRESS',
@@ -42,10 +51,11 @@ const FILTER_CLASSES = [
 export const TrainsBetweenPage: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
 
-  // Normalize initial parameters
+  // Normalize initial parameters using Indian Standard Time (Asia/Kolkata)
+  const defaultToday = getTodayInKolkata();
   const rawFromParam = searchParams.get('from') || 'BOR';
   const rawToParam = searchParams.get('to') || 'DRD';
-  const rawDateParam = searchParams.get('date') || '2026-09-30';
+  const rawDateParam = searchParams.get('date') || defaultToday;
 
   const initialFrom = extractStationCode(rawFromParam);
   const initialTo = extractStationCode(rawToParam);
@@ -61,14 +71,93 @@ export const TrainsBetweenPage: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isOffline, setIsOffline] = useState(false);
+
+  // Live status state
   const [refreshingLive, setRefreshingLive] = useState(false);
-  // Non-fatal banner: shown when we had to serve a bundled timetable because
-  // the live railway API could not be reached.
+  const [liveNotice, setLiveNotice] = useState<string | null>(null);
+  const [lastLiveUpdated, setLastLiveUpdated] = useState<Date | null>(null);
+  const [loadingLiveTrainNumbers, setLoadingLiveTrainNumbers] = useState<Set<string>>(new Set());
+
+  // Non-fatal notice when serving fallback corridor timetable
   const [dataNotice, setDataNotice] = useState<string | null>(null);
 
   // Request guard to prevent race conditions
   const searchGuard = useRequestGuard();
+  const isEnrichingRef = useRef(false);
 
+  /**
+   * Enriches train schedules with real-time live telemetry asynchronously.
+   * Partial failures are handled gracefully without blocking the train list.
+   */
+  const enrichLiveStatuses = useCallback(
+    async (trainList: TrainSummary[], date: string) => {
+      if (!trainList.length || isEnrichingRef.current) return;
+      isEnrichingRef.current = true;
+
+      const trainNumbers = trainList.map((t) => t.trainNumber);
+      setLoadingLiveTrainNumbers(new Set(trainNumbers));
+
+      try {
+        const statusMap = await railwayApi.getBatchLiveStatuses(trainNumbers, date, 6);
+        let unavailableCount = 0;
+        let availableCount = 0;
+
+        setTrains((prev) =>
+          prev.map((t) => {
+            const live = statusMap.get(t.trainNumber);
+            if (live) {
+              availableCount++;
+              return {
+                ...t,
+                liveStatus: live,
+                delayMinutes: live.delayMinutes,
+                isLive: true,
+              };
+            } else {
+              unavailableCount++;
+              return {
+                ...t,
+                liveStatus: {
+                  available: false,
+                  status: 'UNKNOWN',
+                  delayMinutes: t.delayMinutes ?? 0,
+                  lastUpdated: 'Live status unavailable',
+                },
+              };
+            }
+          })
+        );
+
+        setLastLiveUpdated(new Date());
+
+        if (unavailableCount === trainList.length && trainList.length > 0) {
+          // Requirement 25: Clear distinction between schedule success and live status unavailability
+          setLiveNotice(
+            'Train schedules loaded successfully. Live running information is temporarily unavailable.'
+          );
+        } else if (unavailableCount > 0) {
+          setLiveNotice(
+            `Live running status loaded for ${availableCount} of ${trainList.length} trains.`
+          );
+        } else {
+          setLiveNotice(null);
+        }
+      } catch (err: any) {
+        console.warn('[TrainsBetween] Failed to enrich live statuses:', err);
+        setLiveNotice(
+          'Train schedules loaded successfully. Live running information is temporarily unavailable.'
+        );
+      } finally {
+        setLoadingLiveTrainNumbers(new Set());
+        isEnrichingRef.current = false;
+      }
+    },
+    []
+  );
+
+  /**
+   * Primary train search function. Fetches schedule timetable first, then enriches with live telemetry.
+   */
   const fetchTrainsBetween = async (from: string, to: string, date: string) => {
     const requestId = searchGuard.next();
     const cleanFrom = extractStationCode(from);
@@ -81,6 +170,7 @@ export const TrainsBetweenPage: React.FC = () => {
         setLoading(false);
         setError(null);
         setDataNotice(null);
+        setLiveNotice(null);
       }
       return;
     }
@@ -88,6 +178,7 @@ export const TrainsBetweenPage: React.FC = () => {
     setLoading(true);
     setError(null);
     setDataNotice(null);
+    setLiveNotice(null);
 
     // Save into search history
     searchHistoryService.addEntry({
@@ -115,7 +206,7 @@ export const TrainsBetweenPage: React.FC = () => {
         data = getFallbackTrainsBetween(cleanFrom, cleanTo);
         if (data.length > 0) {
           setDataNotice(
-            `Live railway data is unreachable right now, so this is the bundled offline timetable for ` +
+            `Live railway data is unreachable right now, so this is the bundled timetable for ` +
               `${data[0].sourceName} (${data[0].sourceCode}) - ${data[0].destinationName} ` +
               `(${data[0].destinationCode}). Tap Retry to load live availability, delays and platforms.`
           );
@@ -126,6 +217,9 @@ export const TrainsBetweenPage: React.FC = () => {
       setIsOffline(false);
       setError(null);
       data.forEach((t) => offlineStorageService.cacheTrain(t));
+
+      // Asynchronously trigger non-blocking live status enrichment
+      enrichLiveStatuses(data, cleanDate);
     } catch (err: any) {
       console.error('[TrainsBetween] Search request failed:', err);
       if (!searchGuard.isCurrent(requestId)) return;
@@ -141,23 +235,21 @@ export const TrainsBetweenPage: React.FC = () => {
         return;
       }
 
-      // The live railway service could not be reached (or answered with a
-      // gateway error). Serve the bundled corridor timetable rather than
-      // dropping the user into an empty error state.
+      // Serve bundled corridor timetable if network/backend failed
       const fallback = getFallbackTrainsBetween(cleanFrom, cleanTo);
       if (fallback.length > 0) {
         setTrains(fallback);
         setIsOffline(false);
         setError(null);
         setDataNotice(
-          `Live railway data is unreachable right now, so this is the bundled offline timetable for ` +
+          `Live railway data is unreachable right now, so this is the bundled timetable for ` +
             `${fallback[0].sourceName} (${fallback[0].sourceCode}) - ${fallback[0].destinationName} ` +
             `(${fallback[0].destinationCode}). Tap Retry to load live availability, delays and platforms.`
         );
+        enrichLiveStatuses(fallback, cleanDate);
         return;
       }
 
-      // Nothing local to fall back on: report a precise reason when we have one.
       if (!isConnectionError(err) && msg) {
         setError(msg);
       } else {
@@ -171,6 +263,7 @@ export const TrainsBetweenPage: React.FC = () => {
     }
   };
 
+  // Initial load
   useEffect(() => {
     setFromStation(initialFrom);
     setToStation(initialTo);
@@ -178,6 +271,42 @@ export const TrainsBetweenPage: React.FC = () => {
     fetchTrainsBetween(initialFrom, initialTo, initialDate);
     return () => searchGuard.invalidate();
   }, [rawFromParam, rawToParam, rawDateParam]);
+
+  // Periodic Auto-refresh (Requirements 22):
+  // Automatically refresh live status every 30 seconds without refreshing the entire page.
+  // Pauses when tab is hidden or unmounted.
+  useEffect(() => {
+    const REFRESH_INTERVAL_MS = 30000;
+    let timer: any = null;
+
+    const performAutoRefresh = () => {
+      if (
+        document.visibilityState === 'visible' &&
+        trains.length > 0 &&
+        !loading &&
+        !refreshingLive &&
+        !isEnrichingRef.current
+      ) {
+        setRefreshingLive(true);
+        enrichLiveStatuses(trains, travelDate).finally(() => setRefreshingLive(false));
+      }
+    };
+
+    timer = setInterval(performAutoRefresh, REFRESH_INTERVAL_MS);
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        performAutoRefresh();
+      }
+    };
+
+    document.addEventListener('visibilitychange', onVisibilityChange);
+
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
+  }, [trains.length, travelDate, loading, refreshingLive, enrichLiveStatuses]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -207,36 +336,54 @@ export const TrainsBetweenPage: React.FC = () => {
     setToStation(temp);
   };
 
-  const handleRetryLive = async () => {
+  // Manual Live Refresh (Requirement 23)
+  const handleManualRefreshLive = async () => {
+    if (refreshingLive || isEnrichingRef.current) return;
     setRefreshingLive(true);
-    await fetchTrainsBetween(fromStation, toStation, travelDate);
+    await enrichLiveStatuses(trains, travelDate);
     setRefreshingLive(false);
   };
 
-  const parseTimeMinutes = (timeStr?: string) => {
-    if (!timeStr) return 0;
-    const clean = timeStr.trim().toUpperCase();
-    const isPm = clean.includes('PM');
-    const isAm = clean.includes('AM');
-    const parts = clean.replace(/[APM ]/g, '').split(':');
-    let h = parseInt(parts[0], 10) || 0;
-    const m = parseInt(parts[1], 10) || 0;
-    if (isPm && h < 12) h += 12;
-    if (isAm && h === 12) h = 0;
-    return h * 60 + m;
+  // Single train retry (Requirement 11)
+  const handleRetrySingleLive = async (trainNumber: string) => {
+    setLoadingLiveTrainNumbers((prev) => new Set(prev).add(trainNumber));
+    try {
+      const live = await railwayApi.getLiveTrainStatus(trainNumber, travelDate);
+      setTrains((prev) =>
+        prev.map((t) =>
+          t.trainNumber === trainNumber
+            ? {
+                ...t,
+                liveStatus: live,
+                delayMinutes: live.delayMinutes,
+                isLive: true,
+              }
+            : t
+        )
+      );
+    } catch (err) {
+      console.warn(`[TrainsBetween] Retry failed for train ${trainNumber}:`, err);
+    } finally {
+      setLoadingLiveTrainNumbers((prev) => {
+        const next = new Set(prev);
+        next.delete(trainNumber);
+        return next;
+      });
+    }
   };
 
+  // Displayed train list with instant filtering and stable sorting (Requirement 20 & 21)
   const displayedTrains = useMemo(() => {
     let result = [...trains];
 
-    // Filter by category
+    // Filter by train category
     if (selectedClass !== 'ALL') {
       result = result.filter((t) => matchesCategory(t.trainType, selectedClass));
     }
 
-    // Filter by keyword search
+    // Instant client-side search box filter by number or name (Requirement 21)
     if (keywordFilter.trim()) {
-      const q = keywordFilter.toLowerCase();
+      const q = keywordFilter.toLowerCase().trim();
       result = result.filter(
         (t) =>
           t.trainNumber.toLowerCase().includes(q) ||
@@ -244,13 +391,13 @@ export const TrainsBetweenPage: React.FC = () => {
       );
     }
 
-    // Sorting
+    // Stable sorting handling overnight journeys
     result.sort((a, b) => {
       if (sortBy === 'departure') {
-        return parseTimeMinutes(a.departureTime) - parseTimeMinutes(b.departureTime);
+        return parseTimeToMinutes(a.departureTime) - parseTimeToMinutes(b.departureTime);
       }
       if (sortBy === 'arrival') {
-        return parseTimeMinutes(a.arrivalTime) - parseTimeMinutes(b.arrivalTime);
+        return parseTimeToMinutes(a.arrivalTime) - parseTimeToMinutes(b.arrivalTime);
       }
       if (sortBy === 'duration') {
         return a.durationMinutes - b.durationMinutes;
@@ -282,7 +429,7 @@ export const TrainsBetweenPage: React.FC = () => {
           </h1>
         </div>
         <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-          Indian Railways live train search, direct schedules, and platform tracking
+          Indian Railways live train search, real-time running status, and platform tracking
         </p>
       </div>
 
@@ -381,7 +528,7 @@ export const TrainsBetweenPage: React.FC = () => {
         </div>
       </form>
 
-      {/* Controls Bar: Sort, Filter & Keyword */}
+      {/* Controls Bar: Sort, Filter & Keyword Search */}
       <div className="bg-white dark:bg-slate-900 rounded-2xl p-3 border border-slate-200 dark:border-slate-800 shadow-sm space-y-3">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
           {/* Keyword Search Input */}
@@ -393,7 +540,7 @@ export const TrainsBetweenPage: React.FC = () => {
               placeholder="Filter by train name or number (e.g. 19016)..."
               className="w-full bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white text-xs rounded-xl pl-8 pr-3 py-2 border border-slate-200 dark:border-slate-700 focus:outline-none"
             />
-            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-3" />
+            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5" />
           </div>
 
           {/* Sort Buttons */}
@@ -455,7 +602,6 @@ export const TrainsBetweenPage: React.FC = () => {
             <span className="text-[11px] text-blue-500">Checking schedules & live telemetry</span>
           </div>
 
-          {/* Skeleton Cards */}
           {[1, 2, 3].map((n) => (
             <div
               key={n}
@@ -481,7 +627,7 @@ export const TrainsBetweenPage: React.FC = () => {
         </div>
       )}
 
-      {/* ERROR STATE */}
+      {/* FULL API ERROR STATE */}
       {error && !loading && (
         <div className="p-5 rounded-2xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800 text-red-800 dark:text-red-300 text-xs space-y-3">
           <div className="flex items-center gap-2 font-bold text-sm">
@@ -518,55 +664,81 @@ export const TrainsBetweenPage: React.FC = () => {
       {/* RESULTS LIST & SUMMARY */}
       {!loading && !error && (
         <>
-          {/* Header Summary & Scheduled vs Live Banner */}
+          {/* Header Summary & Live Notice Banner (Requirements 24 & 25) */}
           <div className="space-y-2">
             <div className="flex items-center justify-between text-xs text-slate-600 dark:text-slate-400 px-1 flex-wrap gap-2">
-              <div>
+              <div className="flex items-center gap-2 flex-wrap">
                 <span className="text-base font-black text-slate-900 dark:text-white tracking-tight">
                   {displayedTrains.length} TRAINS FOUND
                 </span>
-                <span className="ml-2 text-slate-500 font-medium">
+                <span className="text-slate-500 font-medium">
                   {extractStationCode(fromStation)} &rarr; {extractStationCode(toStation)}
                 </span>
+                {lastLiveUpdated && (
+                  <span className="inline-flex items-center gap-1 text-[11px] text-emerald-600 dark:text-emerald-400 font-medium bg-emerald-50 dark:bg-emerald-950/60 px-2 py-0.5 rounded-full border border-emerald-200 dark:border-emerald-800">
+                    <Radio className="w-3 h-3 text-emerald-500 animate-pulse" />
+                    <span>Live Tracking Active</span>
+                  </span>
+                )}
               </div>
-              <div className="text-[11px] font-mono text-slate-400 flex items-center gap-1.5">
-                <Calendar className="w-3.5 h-3.5 text-blue-500" />
-                <span>{activeDateDetails.formattedDisplay}</span>
+
+              <div className="flex items-center gap-3">
+                <div className="text-[11px] font-mono text-slate-400 flex items-center gap-1.5">
+                  <Calendar className="w-3.5 h-3.5 text-blue-500" />
+                  <span>{activeDateDetails.formattedDisplay}</span>
+                </div>
+
+                {/* Manual Refresh Live Status Button (Requirement 23) */}
+                <button
+                  type="button"
+                  onClick={handleManualRefreshLive}
+                  disabled={refreshingLive || isEnrichingRef.current}
+                  className="inline-flex items-center gap-1 px-3 py-1 rounded-xl bg-blue-50 dark:bg-blue-950 text-blue-700 dark:text-blue-300 font-bold text-xs hover:bg-blue-100 transition shadow-xs"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${refreshingLive ? 'animate-spin' : ''}`} />
+                  <span>{refreshingLive ? 'Updating...' : '↻ Refresh Live Status'}</span>
+                </button>
               </div>
             </div>
 
-            {/* Scheduled fallback notice banner */}
-            <div className="p-3.5 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 text-xs flex items-center justify-between flex-wrap gap-2">
-              <div className="flex items-center gap-2.5 text-amber-900 dark:text-amber-200">
-                <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
-                <div>
-                  <div className="font-extrabold text-xs">⚠ Live running information unavailable</div>
-                  <div className="text-[11px] text-amber-700 dark:text-amber-400 font-medium">Showing scheduled train timings.</div>
+            {/* Non-fatal Connection / Live Status Notice Banner (Requirement 25) */}
+            {liveNotice && (
+              <div className="p-3.5 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 text-xs flex items-center justify-between flex-wrap gap-2">
+                <div className="flex items-center gap-2.5 text-amber-900 dark:text-amber-200">
+                  <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
+                  <div>
+                    <div className="font-extrabold text-xs">Train schedules loaded successfully</div>
+                    <div className="text-[11px] text-amber-700 dark:text-amber-400 font-medium">
+                      {liveNotice}
+                    </div>
+                  </div>
                 </div>
+                <button
+                  type="button"
+                  onClick={handleManualRefreshLive}
+                  disabled={refreshingLive}
+                  className="px-3 py-1.5 rounded-xl bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-bold border border-slate-200 dark:border-slate-700 transition flex items-center gap-1.5 shrink-0 shadow-sm"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${refreshingLive ? 'animate-spin' : ''}`} />
+                  <span>{refreshingLive ? 'Checking...' : 'Retry Live Status'}</span>
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={handleRetryLive}
-                disabled={refreshingLive}
-                className="px-3 py-1.5 rounded-xl bg-white dark:bg-slate-700 hover:bg-slate-50 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 text-xs font-bold border border-slate-200 dark:border-slate-600 transition flex items-center gap-1.5 shrink-0 shadow-sm"
-              >
-                <RefreshCw className={`w-3.5 h-3.5 ${refreshingLive ? 'animate-spin' : ''}`} />
-                <span>{refreshingLive ? 'Checking...' : 'Refresh'}</span>
-              </button>
-            </div>
+            )}
           </div>
 
           {displayedTrains.length > 0 ? (
             <div className="space-y-3.5">
               {displayedTrains.map((train) => (
                 <TrainCard
-                  key={train.trainNumber}
+                  key={`${train.trainNumber}_${train.journeyDate || travelDate}`}
                   train={train}
                   highlightRoute={{
                     from: extractStationCode(fromStation),
                     to: extractStationCode(toStation),
                     date: travelDate,
                   }}
+                  onRetryLive={handleRetrySingleLive}
+                  isLiveLoading={loadingLiveTrainNumbers.has(train.trainNumber)}
                 />
               ))}
             </div>
@@ -579,7 +751,7 @@ export const TrainsBetweenPage: React.FC = () => {
                 No trains found between {extractStationCode(fromStation) === 'BOR' ? 'Boisar' : extractStationCode(fromStation)} ({extractStationCode(fromStation)}) and {extractStationCode(toStation) === 'DRD' ? 'Dahanu Road' : extractStationCode(toStation)} ({extractStationCode(toStation)}) for {activeDateDetails.formattedDisplayLong || activeDateDetails.formattedDisplay}
               </div>
               <p className="text-slate-400 max-w-sm mx-auto leading-relaxed">
-                Try another date or reverse the stations. Direct services and suburban EMU locals operate daily on the Western line.
+                The railway service responded successfully, but no matching trains were found for this route and date. Try another date or reverse stations.
               </p>
               <div className="flex items-center justify-center gap-2 pt-2">
                 <button

@@ -19,8 +19,9 @@ router.get('/:number/route', TrainsController.getRoute);
 // Train schedule stops
 router.get('/:number/schedule', TrainsController.getSchedule);
 
-// Live running status
+// Live running status (both /status and /live supported)
 router.get('/:number/status', TrainsController.getStatus);
+router.get('/:number/live', TrainsController.getStatus);
 
 // Coach configuration
 router.get('/:number/coaches', TrainsController.getCoaches);

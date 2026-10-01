@@ -105,12 +105,14 @@ export class TrainsController {
         cachedAgeSeconds: result.cachedAgeSeconds,
       });
     } catch (err: any) {
-      res.status(503).json({
+      const statusCode = err.statusCode || 503;
+      res.status(statusCode).json({
         success: false,
         error: {
-          message: 'Live train status temporarily unavailable from upstream data provider.',
-          code: 'PROVIDER_ERROR',
-          details: err.message,
+          code: err.code || 'PROVIDER_ERROR',
+          message: err.message || 'Live train status temporarily unavailable from upstream data provider.',
+          retryable: typeof err.retryable === 'boolean' ? err.retryable : true,
+          details: process.env.NODE_ENV === 'development' ? err.details : undefined,
         },
       });
     }

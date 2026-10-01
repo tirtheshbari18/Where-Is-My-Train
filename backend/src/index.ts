@@ -5,6 +5,7 @@ import dotenv from 'dotenv';
 import apiRouter from './routes/index.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { apiRateLimiter } from './middleware/rateLimiter.js';
+import { requestIdMiddleware } from './middleware/requestId.js';
 
 dotenv.config();
 
@@ -40,19 +41,15 @@ app.use(
   })
 );
 
+// Attach unique X-Request-ID and structured railway access telemetry
+app.use(requestIdMiddleware);
+
 // Body Parsing
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // Global Rate Limiting on API
 app.use('/api', apiRateLimiter);
-
-// Simple Request Logging
-app.use((req, _res, next) => {
-  const timestamp = new Date().toLocaleTimeString();
-  console.log(`[${timestamp}] ${req.method} ${req.originalUrl}`);
-  next();
-});
 
 // API Routes
 app.use('/api', apiRouter);

@@ -3,33 +3,41 @@ import { Request, Response, NextFunction } from 'express';
 export interface AppError extends Error {
   statusCode?: number;
   code?: string;
+  retryable?: boolean;
   details?: any;
 }
 
 export function errorHandler(
   err: AppError,
-  _req: Request,
+  req: Request,
   res: Response,
   _next: NextFunction
 ) {
-  console.error('[API Error]:', {
+  const statusCode = err.statusCode || 500;
+  const requestId = req.requestId || 'unknown';
+
+  console.error(`[railway-error] requestId=${requestId} status=${statusCode} code=${err.code || 'INTERNAL_ERROR'}:`, {
     message: err.message,
     stack: process.env.NODE_ENV === 'development' ? err.stack : undefined,
-    code: err.code,
   });
 
-  const statusCode = err.statusCode || 500;
-  const message =
-    err.statusCode && err.statusCode < 500
+  const retryable =
+    typeof err.retryable === 'boolean'
+      ? err.retryable
+      : statusCode >= 500 || statusCode === 429 || statusCode === 408;
+
+  const userFriendlyMessage =
+    statusCode < 500
       ? err.message
-      : 'An unexpected internal railway service error occurred. Please try again later.';
+      : 'Live railway data service is temporarily unavailable. Please try again shortly.';
 
   res.status(statusCode).json({
     success: false,
     error: {
-      message,
-      code: err.code || 'INTERNAL_ERROR',
-      details: process.env.NODE_ENV === 'development' ? err.details : undefined,
+      code: err.code || (statusCode >= 500 ? 'PROVIDER_UNAVAILABLE' : 'INTERNAL_ERROR'),
+      message: userFriendlyMessage,
+      retryable,
+      ...(process.env.NODE_ENV === 'development' && err.details ? { details: err.details } : {}),
     },
   });
 }

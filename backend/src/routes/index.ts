@@ -28,6 +28,34 @@ apiRouter.get('/health', (_req, res) => {
   });
 });
 
+// Railway Provider Specific Healthcheck (Requirement 26)
+apiRouter.get('/health/railway', async (_req, res) => {
+  const start = performance.now();
+  const { providerManager } = await import('../providers/providerManager.js');
+  const primaryCode = providerManager.getPrimaryProviderCode();
+  let isUp = false;
+  try {
+    isUp = await providerManager.isAvailable();
+  } catch {
+    isUp = false;
+  }
+  const latencyMs = Math.round(performance.now() - start);
+  const status = isUp ? (latencyMs < 1000 ? 'healthy' : 'degraded') : 'down';
+
+  res.status(isUp ? 200 : 503).json({
+    success: isUp,
+    provider: primaryCode,
+    status,
+    latencyMs,
+    timestamp: new Date().toISOString(),
+    details: {
+      primaryProvider: primaryCode,
+      activeProviders: ['mock', 'external', 'licensed', 'ntes'],
+      uptimeSeconds: Math.round(process.uptime()),
+    },
+  });
+});
+
 // Master Indian Railways database routes (/zones, /divisions, /routes, /railway-lines, /data-version)
 apiRouter.use('/', masterRouter);
 

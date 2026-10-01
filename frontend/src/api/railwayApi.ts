@@ -21,6 +21,37 @@ const REQUEST_TIMEOUT_MS = 15000;
 /** Total attempts (first try + one automatic retry on transient failures). */
 const MAX_ATTEMPTS = 2;
 
+export type LiveTrainStatusType =
+  | 'NOT_STARTED'
+  | 'DEPARTED'
+  | 'RUNNING'
+  | 'AT_STATION'
+  | 'APPROACHING'
+  | 'ARRIVED'
+  | 'TERMINATED'
+  | 'CANCELLED'
+  | 'DIVERTED'
+  | 'SHORT_TERMINATED'
+  | 'UNKNOWN';
+
+export interface NormalizedLiveStatus {
+  available: boolean;
+  status: LiveTrainStatusType;
+  currentStation?: string;
+  currentStationCode?: string;
+  nextStation?: string;
+  nextStationCode?: string;
+  delayMinutes: number;
+  lastUpdated: string;
+  latitude?: number;
+  longitude?: number;
+  speed?: number;
+  platform?: string;
+  source?: string;
+  accuracy?: 'High' | 'Approximate' | 'Scheduled position' | 'Unavailable';
+  isStale?: boolean;
+}
+
 export interface TrainSummary {
   trainNumber: string;
   trainName: string;
@@ -28,11 +59,23 @@ export interface TrainSummary {
   sourceName: string;
   destinationCode: string;
   destinationName: string;
+  fromStation?: {
+    code: string;
+    name: string;
+  };
+  toStation?: {
+    code: string;
+    name: string;
+  };
+  journeyDate?: string;
   trainType: string;
   runningDays: string[];
   departureTime: string;
   arrivalTime: string;
+  duration?: string;
   durationMinutes: number;
+  stops?: number;
+  distance?: number;
   distanceKm: number;
   zone?: string;
   hasPantry?: boolean;
@@ -40,6 +83,7 @@ export interface TrainSummary {
   currentStatus?: string;
   delayMinutes?: number;
   isLive?: boolean;
+  liveStatus?: NormalizedLiveStatus;
 }
 
 export interface TrainStop {
@@ -403,29 +447,48 @@ export function setAdminKey(key: string): void {
   }
 }
 
-/** Turn any failed response into a short, human-readable message (never a stack trace). */
-function toFriendlyError(status: number, json: any): string {
-  // Gateway/upstream failures are always "we could not reach the service" — never
-  // surface the raw server text, and make sure the caller recognises it as a
-  // connectivity problem so it can fall back to cached/offline data.
-  if (status >= 500) return 'Unable to connect to railway data service.';
+export class RailwayApiError extends Error {
+  status?: number;
+  code?: string;
+  retryable?: boolean;
+  details?: any;
 
+  constructor(message: string, status?: number, code?: string, retryable?: boolean, details?: any) {
+    super(message);
+    this.name = 'RailwayApiError';
+    this.status = status;
+    this.code = code;
+    this.retryable = retryable;
+    this.details = details;
+  }
+}
+
+/** Turn any failed response into a short, human-readable message without hiding the root cause. */
+function toFriendlyError(status: number, json: any): string {
   const serverMsg =
-    typeof json?.error === 'string'
-      ? json.error
-      : typeof json?.error?.message === 'string'
+    typeof json?.error?.message === 'string'
       ? json.error.message
+      : typeof json?.error === 'string'
+      ? json.error
       : typeof json?.message === 'string'
       ? json.message
       : null;
-  if (serverMsg && serverMsg.length <= 200 && !/[A-Za-z]:\\|node_modules/.test(serverMsg)) {
+
+  if (serverMsg && serverMsg.length <= 300 && !/[A-Za-z]:\\|node_modules/.test(serverMsg)) {
     return serverMsg;
   }
+
   if (status === 400) return 'Invalid railway query parameters. Please check station codes and date.';
-  if (status === 401 || status === 403) return 'You are not authorised to perform this action.';
+  if (status === 401) return 'Railway provider returned HTTP 401 Unauthorized. Check RAILWAY_API_KEY.';
+  if (status === 403) return 'You are not authorised to access this railway provider (HTTP 403).';
   if (status === 404) return 'The requested railway data was not found.';
-  if (status === 429) return 'Too many requests. Please wait a moment and try again.';
-  return `Request failed (status ${status}).`;
+  if (status === 408) return 'Railway provider timed out after 10 seconds.';
+  if (status === 429) return 'Too many railway requests. Please wait a moment and try again.';
+  if (status === 502) return 'Bad Gateway: Upstream railway provider is unreachable.';
+  if (status === 503) return 'Live railway data service is temporarily unavailable.';
+  if (status === 504) return 'Gateway Timeout: Railway provider took too long to reply.';
+  if (status >= 500) return 'Internal railway service error. Please try again shortly.';
+  return `Railway API request failed with status ${status}.`;
 }
 
 /**
@@ -732,6 +795,73 @@ export const railwayApi = {
     return res.data;
   },
 
+  async getLiveTrainStatus(
+    number: string,
+    date?: string
+  ): Promise<NormalizedLiveStatus> {
+    const url = `${API_BASE}/trains/${encodeURIComponent(number)}/status${date ? `?date=${encodeURIComponent(date)}` : ''}`;
+    const res = await fetchJson<{
+      success: boolean;
+      data: RunningStatus;
+      isStale?: boolean;
+      staleWarning?: string;
+    }>(url);
+
+    const data = res.data;
+    const delay = data.delayMinutes ?? 0;
+    const currentStn = data.lastReportedStation?.name;
+    const nextStn = data.nextStation?.name;
+
+    return {
+      available: true,
+      status: (data.status as LiveTrainStatusType) || 'RUNNING',
+      currentStation: currentStn,
+      currentStationCode: data.lastReportedStation?.code,
+      nextStation: nextStn,
+      nextStationCode: data.nextStation?.code,
+      delayMinutes: delay,
+      lastUpdated: data.dataFreshnessText || 'Updated just now',
+      latitude: data.latitude,
+      longitude: data.longitude,
+      speed: data.speedKmH,
+      platform: data.lastReportedStation?.platform,
+      source: data.source,
+      accuracy: data.latitude && data.longitude ? 'High' : 'Approximate',
+      isStale: res.isStale,
+    };
+  },
+
+  async getBatchLiveStatuses(
+    trainNumbers: string[],
+    date?: string,
+    concurrency = 6
+  ): Promise<Map<string, NormalizedLiveStatus | null>> {
+    const results = new Map<string, NormalizedLiveStatus | null>();
+    if (!trainNumbers.length) return results;
+
+    for (let i = 0; i < trainNumbers.length; i += concurrency) {
+      const chunk = trainNumbers.slice(i, i + concurrency);
+      const settled = await Promise.allSettled(
+        chunk.map(async (num) => {
+          const status = await this.getLiveTrainStatus(num, date);
+          return { trainNumber: num, status };
+        })
+      );
+
+      for (let j = 0; j < chunk.length; j++) {
+        const trainNum = chunk[j];
+        const item = settled[j];
+        if (item.status === 'fulfilled') {
+          results.set(trainNum, item.value.status);
+        } else {
+          results.set(trainNum, null);
+        }
+      }
+    }
+
+    return results;
+  },
+
   async getTrainsBetween(from: string, to: string, date?: string): Promise<TrainSummary[]> {
     const cleanFrom = extractStationCode(from) || from.trim().toUpperCase();
     const cleanTo = extractStationCode(to) || to.trim().toUpperCase();
@@ -744,24 +874,62 @@ export const railwayApi = {
     if (cleanDate) queryParts.push(`date=${encodeURIComponent(cleanDate)}`);
 
     const url = `${API_BASE}/trains-between?${queryParts.join('&')}`;
+    let trains: TrainSummary[] = [];
+
     try {
       const res = await fetchJson<{ success: boolean; data: TrainSummary[] }>(url);
       if (res && Array.isArray(res.data) && res.data.length > 0) {
-        return res.data;
+        trains = res.data;
+      } else {
+        const fallback = getFallbackTrainsBetween(cleanFrom, cleanTo);
+        trains = fallback.length > 0 ? fallback : (res?.data || []);
       }
-      // If live returned empty, check if we have fallback data
-      const fallback = getFallbackTrainsBetween(cleanFrom, cleanTo);
-      return fallback.length > 0 ? fallback : (res?.data || []);
     } catch (err: any) {
       if (isConnectionError(err)) {
-        console.warn(`[RailwayAPI] Network/connection error fetching trains between ${cleanFrom} and ${cleanTo}. Serving fallback timetable.`);
+        console.warn(`[RailwayAPI] Network error fetching trains between ${cleanFrom} and ${cleanTo}. Serving fallback timetable.`);
         const fallback = getFallbackTrainsBetween(cleanFrom, cleanTo);
         if (fallback.length > 0) {
-          return fallback;
+          trains = fallback;
+        } else {
+          throw err;
         }
+      } else {
+        throw err;
       }
-      throw err;
     }
+
+    // Deduplicate by trainNumber + journeyDate and normalize nested fields
+    const seen = new Set<string>();
+    const normalized: TrainSummary[] = [];
+    const effectiveDate = cleanDate || new Date().toISOString().split('T')[0];
+
+    for (const t of trains) {
+      const key = `${t.trainNumber}_${t.journeyDate || effectiveDate}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+
+      if (!t.fromStation) {
+        t.fromStation = { code: t.sourceCode || cleanFrom, name: t.sourceName || cleanFrom };
+      }
+      if (!t.toStation) {
+        t.toStation = { code: t.destinationCode || cleanTo, name: t.destinationName || cleanTo };
+      }
+      if (!t.journeyDate) {
+        t.journeyDate = effectiveDate;
+      }
+      if (!t.duration) {
+        const hours = Math.floor(t.durationMinutes / 60);
+        const mins = t.durationMinutes % 60;
+        t.duration = hours > 0 ? `${hours}h ${mins}m` : `${mins} min`;
+      }
+      if (t.distance === undefined) {
+        t.distance = t.distanceKm;
+      }
+
+      normalized.push(t);
+    }
+
+    return normalized;
   },
 
   async searchStations(q: string): Promise<StationLocation[]> {

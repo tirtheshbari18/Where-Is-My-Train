@@ -103,6 +103,37 @@ export interface TrainStop {
   longitude: number;
 }
 
+export type LiveTrainStatusType =
+  | 'NOT_STARTED'
+  | 'DEPARTED'
+  | 'RUNNING'
+  | 'AT_STATION'
+  | 'APPROACHING'
+  | 'ARRIVED'
+  | 'TERMINATED'
+  | 'CANCELLED'
+  | 'DIVERTED'
+  | 'SHORT_TERMINATED'
+  | 'UNKNOWN';
+
+export interface NormalizedLiveStatus {
+  available: boolean;
+  status: LiveTrainStatusType;
+  currentStation?: string;
+  currentStationCode?: string;
+  nextStation?: string;
+  nextStationCode?: string;
+  delayMinutes: number;
+  lastUpdated: string;
+  latitude?: number;
+  longitude?: number;
+  speed?: number;
+  platform?: string;
+  source?: string;
+  accuracy?: 'High' | 'Approximate' | 'Scheduled position' | 'Unavailable';
+  isStale?: boolean;
+}
+
 export interface TrainSummary {
   trainNumber: string;
   trainName: string;
@@ -110,11 +141,23 @@ export interface TrainSummary {
   sourceName: string;
   destinationCode: string;
   destinationName: string;
+  fromStation?: {
+    code: string;
+    name: string;
+  };
+  toStation?: {
+    code: string;
+    name: string;
+  };
+  journeyDate?: string;
   trainType: TrainType;
   runningDays: string[]; // ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
   departureTime: string;
   arrivalTime: string;
+  duration?: string;
   durationMinutes: number;
+  stops?: number;
+  distance?: number;
   distanceKm: number;
   zone?: string;
   hasPantry?: boolean;
@@ -122,6 +165,7 @@ export interface TrainSummary {
   currentStatus?: string;
   delayMinutes?: number;
   isLive?: boolean;
+  liveStatus?: NormalizedLiveStatus;
 }
 
 export interface TrainDetail extends TrainSummary {

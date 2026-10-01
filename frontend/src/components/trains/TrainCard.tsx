@@ -1,7 +1,18 @@
 // frontend/src/components/trains/TrainCard.tsx
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Train, ArrowRight, Clock, Heart, Utensils, CheckCircle2, MapPin } from 'lucide-react';
+import {
+  Train,
+  ArrowRight,
+  Clock,
+  Heart,
+  Utensils,
+  CheckCircle2,
+  MapPin,
+  AlertTriangle,
+  RefreshCw,
+  Navigation,
+} from 'lucide-react';
 import { TrainSummary } from '../../api/railwayApi.js';
 import { storage } from '../../utils/storage.js';
 import { formatTimeWithAmPm } from '../../utils/timeFormat.js';
@@ -11,11 +22,19 @@ interface Props {
   train: TrainSummary;
   onFavouriteToggle?: () => void;
   highlightRoute?: { from: string; to: string; date?: string };
+  onRetryLive?: (trainNumber: string) => void;
+  isLiveLoading?: boolean;
 }
 
 const ALL_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
-export const TrainCard: React.FC<Props> = ({ train, onFavouriteToggle, highlightRoute }) => {
+export const TrainCard: React.FC<Props> = ({
+  train,
+  onFavouriteToggle,
+  highlightRoute,
+  onRetryLive,
+  isLiveLoading = false,
+}) => {
   const [isFav, setIsFav] = useState(() =>
     storage.isFavourite('TRAIN', train.trainNumber)
   );
@@ -55,11 +74,11 @@ export const TrainCard: React.FC<Props> = ({ train, onFavouriteToggle, highlight
     }
     switch (type) {
       case 'Vande Bharat':
-        return 'bg-blue-600 text-white';
+        return 'bg-blue-600 text-white border-blue-600';
       case 'Rajdhani':
-        return 'bg-red-600 text-white';
+        return 'bg-red-600 text-white border-red-600';
       case 'Shatabdi':
-        return 'bg-cyan-700 text-white';
+        return 'bg-cyan-700 text-white border-cyan-700';
       case 'Superfast':
         return 'bg-indigo-100 text-indigo-800 border-indigo-200 dark:bg-indigo-950/60 dark:text-indigo-300 dark:border-indigo-800';
       default:
@@ -92,8 +111,79 @@ export const TrainCard: React.FC<Props> = ({ train, onFavouriteToggle, highlight
     train.runningDays.length === 7 ||
     ALL_DAYS.every((d) => train.runningDays?.includes(d));
 
-  const isLiveTelemetry = Boolean(train.isLive);
-  const delay = train.delayMinutes ?? 0;
+  const live = train.liveStatus;
+  const hasLive = Boolean(live && live.available);
+  const delay = live?.delayMinutes ?? train.delayMinutes ?? 0;
+
+  // Accessible Delay & Status configuration
+  const renderStatusBadge = () => {
+    if (isLiveLoading) {
+      return (
+        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
+          <RefreshCw className="w-3 h-3 animate-spin text-blue-600" />
+          <span>Fetching live status...</span>
+        </span>
+      );
+    }
+
+    if (hasLive && live) {
+      if (live.status === 'CANCELLED') {
+        return (
+          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-extrabold bg-red-100 text-red-800 dark:bg-red-950/80 dark:text-red-300 border border-red-300 dark:border-red-700">
+            <span aria-hidden="true">🔴</span>
+            <span>CANCELLED</span>
+          </span>
+        );
+      }
+      if (live.status === 'DIVERTED') {
+        return (
+          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-extrabold bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300 border border-amber-300 dark:border-amber-700">
+            <span aria-hidden="true">🟡</span>
+            <span>DIVERTED</span>
+          </span>
+        );
+      }
+      if (delay === 0) {
+        return (
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-extrabold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700">
+            <span aria-hidden="true">🟢</span>
+            <span>ON TIME</span>
+          </span>
+        );
+      }
+      if (delay <= 15) {
+        return (
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-extrabold bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300 border border-amber-300 dark:border-amber-700">
+            <span aria-hidden="true">🟡</span>
+            <span>{delay} MIN LATE</span>
+          </span>
+        );
+      }
+      return (
+        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-extrabold bg-red-100 text-red-800 dark:bg-red-950/80 dark:text-red-300 border border-red-300 dark:border-red-700">
+          <span aria-hidden="true">🔴</span>
+          <span>{delay} MIN LATE</span>
+        </span>
+      );
+    }
+
+    if (train.isLive) {
+      return (
+        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700">
+          <span aria-hidden="true">🟢</span>
+          <span>● LIVE {delay > 0 ? `${delay}M LATE` : 'ON TIME'}</span>
+        </span>
+      );
+    }
+
+    // Live status unavailable fallback
+    return (
+      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+        <span className="w-2 h-2 rounded-full bg-slate-400"></span>
+        <span>SCHEDULED</span>
+      </span>
+    );
+  };
 
   return (
     <>
@@ -148,10 +238,10 @@ export const TrainCard: React.FC<Props> = ({ train, onFavouriteToggle, highlight
                 {formatTimeWithAmPm(train.departureTime)}
               </div>
               <div className="text-xs font-bold text-blue-600 dark:text-blue-400">
-                {train.sourceCode}
+                {train.fromStation?.code || train.sourceCode}
               </div>
               <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
-                {train.sourceName}
+                {train.fromStation?.name || train.sourceName}
               </div>
             </div>
 
@@ -167,37 +257,81 @@ export const TrainCard: React.FC<Props> = ({ train, onFavouriteToggle, highlight
                 {formatTimeWithAmPm(train.arrivalTime)}
               </div>
               <div className="text-xs font-bold text-blue-600 dark:text-blue-400">
-                {train.destinationCode}
+                {train.toStation?.code || train.destinationCode}
               </div>
               <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
-                {train.destinationName}
+                {train.toStation?.name || train.destinationName}
               </div>
             </div>
           </div>
         </div>
 
-        {/* Status, Platform, Frequency & Duration Bar */}
-        <div className="flex items-center justify-between gap-2 text-xs mb-3 px-1 flex-wrap">
-          <div className="flex items-center gap-2">
-            {/* Live vs Scheduled Badge */}
-            {isLiveTelemetry ? (
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-extrabold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                <span>● LIVE {delay > 0 ? `${delay}M LATE` : 'ON TIME'}</span>
+        {/* Live Running Information Card (Requirements 10 & 24) */}
+        {hasLive && live ? (
+          <div className="bg-emerald-50/70 dark:bg-emerald-950/30 rounded-xl p-3 border border-emerald-200/80 dark:border-emerald-800/60 mb-3 space-y-2">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              {renderStatusBadge()}
+              <span className="text-[11px] text-emerald-800 dark:text-emerald-300 font-medium">
+                {live.lastUpdated || 'Updated just now'}
               </span>
-            ) : (
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
-                <span className="w-1.5 h-1.5 rounded-full bg-slate-400"></span>
-                <span>SCHEDULED</span>
-              </span>
-            )}
+            </div>
 
-            {/* Platform Badge */}
-            {train.platform && (
-              <span className="px-2 py-0.5 rounded-lg bg-blue-50 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300 font-bold font-mono text-[11px] border border-blue-200 dark:border-blue-800">
-                PF {train.platform}
-              </span>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-slate-700 dark:text-slate-300 pt-1">
+              {live.currentStation && (
+                <div className="flex items-center gap-1.5">
+                  <Navigation className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
+                  <span className="truncate">
+                    <span className="font-semibold text-slate-500 dark:text-slate-400">Location: </span>
+                    {live.currentStation.startsWith('At ') || live.currentStation.startsWith('Between ')
+                      ? live.currentStation
+                      : `At ${live.currentStation}`}
+                  </span>
+                </div>
+              )}
+
+              {live.nextStation && (
+                <div className="flex items-center gap-1.5">
+                  <ArrowRight className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                  <span className="truncate">
+                    <span className="font-semibold text-slate-500 dark:text-slate-400">Next: </span>
+                    {live.nextStation}
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
+        ) : live && !live.available ? (
+          // Live status unavailable for this train (Requirement 11)
+          <div className="bg-amber-50/70 dark:bg-amber-950/30 rounded-xl p-2.5 border border-amber-200 dark:border-amber-800/60 mb-3 flex items-center justify-between gap-2 text-xs">
+            <div className="flex items-center gap-1.5 text-amber-800 dark:text-amber-300">
+              <AlertTriangle className="w-4 h-4 shrink-0 text-amber-600" />
+              <span>LIVE STATUS: Temporarily unavailable</span>
+            </div>
+            {onRetryLive && (
+              <button
+                type="button"
+                onClick={() => onRetryLive(train.trainNumber)}
+                disabled={isLiveLoading}
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-100 hover:bg-amber-200 dark:bg-amber-900/60 dark:hover:bg-amber-900 text-amber-900 dark:text-amber-200 font-bold text-[11px] transition"
+              >
+                <RefreshCw className={`w-3 h-3 ${isLiveLoading ? 'animate-spin' : ''}`} />
+                <span>Retry</span>
+              </button>
             )}
+          </div>
+        ) : null}
+
+        {/* Platform, Fare & Operating Frequency Bar */}
+        <div className="flex items-center justify-between gap-2 text-xs mb-3 px-1 flex-wrap">
+          <div className="flex items-center gap-2 flex-wrap">
+            {!hasLive && renderStatusBadge()}
+
+            {/* Platform Badge (Requirement 33: Never invent platform number) */}
+            <span className="px-2 py-0.5 rounded-lg bg-blue-50 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300 font-bold font-mono text-[11px] border border-blue-200 dark:border-blue-800">
+              {train.platform || live?.platform
+                ? `PF ${train.platform || live?.platform}`
+                : 'Platform: Not available'}
+            </span>
 
             {/* Fare badge */}
             <span className="px-2 py-0.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 font-extrabold font-mono text-[11px] border border-emerald-200 dark:border-emerald-800">

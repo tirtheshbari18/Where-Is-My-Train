@@ -2,6 +2,7 @@ import { IRailwayDataProvider } from './RailwayDataProvider.interface.js';
 import { MockRailwayProvider } from './mock/mockRailwayProvider.js';
 import { NtesRailwayProvider } from './ntes/ntesRailwayProvider.js';
 import { LicensedRailwayProvider } from './licensed/licensedRailwayProvider.js';
+import { ExternalRailwayProvider } from './external/externalRailwayProvider.js';
 import {
   TrainSummary,
   TrainDetail,
@@ -29,21 +30,24 @@ export class ProviderManager implements IRailwayDataProvider {
 
   private providers: Map<string, IRailwayDataProvider> = new Map();
   private primaryProviderCode: string = 'mock';
-  private fallbackOrder: string[] = ['ntes', 'licensed', 'mock'];
+  private secondaryProviderCode?: string;
+  private fallbackOrder: string[] = ['external', 'licensed', 'ntes', 'mock'];
   private providerStats: Map<string, ProviderStats> = new Map();
 
   constructor() {
-    // Register standard providers
+    // Register all standard and external providers
     const mock = new MockRailwayProvider();
     const ntes = new NtesRailwayProvider();
     const licensed = new LicensedRailwayProvider();
+    const external = new ExternalRailwayProvider();
 
     this.providers.set('mock', mock);
     this.providers.set('ntes', ntes);
     this.providers.set('licensed', licensed);
+    this.providers.set('external', external);
 
     // Initialize stats
-    for (const code of ['mock', 'ntes', 'licensed']) {
+    for (const code of ['mock', 'ntes', 'licensed', 'external']) {
       this.providerStats.set(code, {
         totalRequests: 0,
         successCount: 0,
@@ -53,10 +57,33 @@ export class ProviderManager implements IRailwayDataProvider {
       });
     }
 
-    const defaultProvider = process.env.DEFAULT_DATA_PROVIDER || 'mock';
-    if (this.providers.has(defaultProvider)) {
-      this.primaryProviderCode = defaultProvider;
+    // Determine primary and secondary providers from environment variables
+    const primary =
+      process.env.PRIMARY_RAILWAY_PROVIDER ||
+      (process.env.RAILWAY_API_KEY ? 'external' : process.env.DEFAULT_DATA_PROVIDER || 'mock');
+    const secondary = process.env.SECONDARY_RAILWAY_PROVIDER;
+
+    if (this.providers.has(primary)) {
+      this.primaryProviderCode = primary;
     }
+    if (secondary && this.providers.has(secondary)) {
+      this.secondaryProviderCode = secondary;
+    }
+
+    this.recomputeFallbackOrder();
+  }
+
+  private recomputeFallbackOrder() {
+    const list: string[] = [this.primaryProviderCode];
+    if (this.secondaryProviderCode && this.secondaryProviderCode !== this.primaryProviderCode) {
+      list.push(this.secondaryProviderCode);
+    }
+    for (const code of ['external', 'licensed', 'ntes', 'mock']) {
+      if (!list.includes(code)) {
+        list.push(code);
+      }
+    }
+    this.fallbackOrder = list;
   }
 
   getPrimaryProviderCode(): string {
@@ -66,11 +93,7 @@ export class ProviderManager implements IRailwayDataProvider {
   setPrimaryProvider(code: string): boolean {
     if (this.providers.has(code)) {
       this.primaryProviderCode = code;
-      // Re-order fallback chain to place selected provider first
-      this.fallbackOrder = [
-        code,
-        ...Array.from(this.providers.keys()).filter((c) => c !== code),
-      ];
+      this.recomputeFallbackOrder();
       return true;
     }
     return false;
@@ -223,9 +246,48 @@ export class ProviderManager implements IRailwayDataProvider {
     toCode: string,
     date?: string
   ): Promise<TrainSummary[]> {
-    return this.executeWithFallback('getTrainsBetweenStations', (p) =>
+    const rawList = await this.executeWithFallback('getTrainsBetweenStations', (p) =>
       p.getTrainsBetweenStations(fromCode, toCode, date)
     );
+
+    const seen = new Set<string>();
+    const deduplicated: TrainSummary[] = [];
+    const journeyDate = date || new Date().toISOString().split('T')[0];
+
+    for (const train of rawList) {
+      const dedupKey = `${train.trainNumber}_${train.journeyDate || journeyDate}`;
+      if (seen.has(dedupKey)) continue;
+      seen.add(dedupKey);
+
+      // Normalize nested fields if missing
+      if (!train.fromStation) {
+        train.fromStation = {
+          code: train.sourceCode || fromCode,
+          name: train.sourceName || fromCode,
+        };
+      }
+      if (!train.toStation) {
+        train.toStation = {
+          code: train.destinationCode || toCode,
+          name: train.destinationName || toCode,
+        };
+      }
+      if (!train.journeyDate) {
+        train.journeyDate = journeyDate;
+      }
+      if (!train.duration) {
+        const hours = Math.floor(train.durationMinutes / 60);
+        const mins = train.durationMinutes % 60;
+        train.duration = hours > 0 ? `${hours}h ${mins}m` : `${mins} min`;
+      }
+      if (train.distance === undefined) {
+        train.distance = train.distanceKm;
+      }
+
+      deduplicated.push(train);
+    }
+
+    return deduplicated;
   }
 
   async getTrainExceptions(type?: string): Promise<TrainException[]> {
