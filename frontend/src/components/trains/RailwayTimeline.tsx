@@ -21,6 +21,7 @@ import {
   Award,
 } from 'lucide-react';
 import {
+  railwayApi,
   TrainStop,
   RouteSegment,
   PlatformUpdate,
@@ -115,6 +116,7 @@ function formatAgo(iso?: string): string {
   const then = new Date(iso).getTime();
   if (Number.isNaN(then)) return 'Update time unknown';
   const seconds = Math.max(0, Math.round((Date.now() - then) / 1000));
+  if (seconds < 15) return 'Updated a few seconds ago';
   if (seconds < 60) return `Updated ${seconds}s ago`;
   const minutes = Math.round(seconds / 60);
   if (minutes < 60) return `Updated ${minutes} min ago`;
@@ -219,8 +221,8 @@ export const RailwayTimeline: React.FC<Props> = ({
 
   const triggerContributionMilestone = () => {
     const USER_CONTRIBUTIONS_KEY = 'wimt_user_contributions';
-    const currentCount = parseInt(localStorage.getItem(USER_CONTRIBUTIONS_KEY) || '49', 10);
-    const newCount = (isNaN(currentCount) ? 49 : currentCount) + 1;
+    const currentCount = parseInt(localStorage.getItem(USER_CONTRIBUTIONS_KEY) || '0', 10);
+    const newCount = (isNaN(currentCount) ? 0 : currentCount) + 1;
     localStorage.setItem(USER_CONTRIBUTIONS_KEY, String(newCount));
     const s = ['th', 'st', 'nd', 'rd'];
     const v = newCount % 100;
@@ -234,6 +236,43 @@ export const RailwayTimeline: React.FC<Props> = ({
     setTimeout(() => {
       setContributionToast(null);
     }, 4500);
+  };
+
+  /**
+   * Section 2: Circular Speed Indicator
+   * Displays dynamic speed as large bold number and 'km/h' underneath.
+   * Fallback to '—' when telemetry is not reported.
+   */
+  const renderSpeedCircle = (size: 'normal' | 'large' = 'normal') => {
+    const speedVal = currentSpeed !== null && currentSpeed !== undefined ? currentSpeed : null;
+    const isEstimated = status?.positionType === 'estimated';
+
+    return (
+      <div
+        className={`rounded-full bg-white dark:bg-slate-900 border-2 sm:border-[3px] border-blue-600 dark:border-blue-400 shadow-xl flex flex-col items-center justify-center shrink-0 z-20 transition-all select-none ${
+          size === 'large'
+            ? 'w-16 h-16 sm:w-20 sm:h-20 ring-4 ring-blue-500/20'
+            : 'w-14 h-14 sm:w-16 sm:h-16 ring-2 ring-blue-500/20'
+        }`}
+        title={
+          speedVal !== null
+            ? `Train speed: ${speedVal} km/h${isEstimated ? ' (estimated)' : ''}`
+            : 'Speed telemetry unavailable from provider'
+        }
+      >
+        <span className="text-base sm:text-xl font-black font-mono leading-none text-slate-950 dark:text-cyan-300">
+          {speedVal !== null ? speedVal : '—'}
+        </span>
+        <span className="text-[10px] sm:text-xs font-bold text-slate-500 dark:text-slate-400 mt-0.5">
+          km/h
+        </span>
+        {isEstimated && (
+          <span className="text-[8px] font-semibold text-amber-500 uppercase -mt-0.5">
+            est
+          </span>
+        )}
+      </div>
+    );
   };
 
   useEffect(() => {
@@ -275,7 +314,7 @@ export const RailwayTimeline: React.FC<Props> = ({
     }
   };
 
-  // Compact platform verification popup opened from a "PF n" badge
+  // Compact platform verification popup opened from a "PF n ✎" badge
   const [votePopup, setVotePopup] = useState<{
     stationCode: string;
     stationName: string;
@@ -284,12 +323,20 @@ export const RailwayTimeline: React.FC<Props> = ({
   const [popupVotes, setPopupVotes] = useState<PlatformVoteResult | null>(null);
   const [popupError, setPopupError] = useState<string | null>(null);
   const [popupBusy, setPopupBusy] = useState(false);
+  const [isCorrectingPlatform, setIsCorrectingPlatform] = useState(false);
+  const [platformCorrectionInput, setPlatformCorrectionInput] = useState('');
 
   useEffect(() => {
-    if (!votePopup) return;
+    if (!votePopup) {
+      setIsCorrectingPlatform(false);
+      setPlatformCorrectionInput('');
+      return;
+    }
     let cancelled = false;
     setPopupVotes(null);
     setPopupError(null);
+    setIsCorrectingPlatform(false);
+    setPlatformCorrectionInput(votePopup.platform || '');
     platformVoteService
       .getVotes(trainNumber, votePopup.stationCode, votePopup.platform, journeyDate)
       .then((res) => {
@@ -305,6 +352,11 @@ export const RailwayTimeline: React.FC<Props> = ({
 
   const handlePopupVote = async (vote: 'YES' | 'NO' | 'NOT_SURE') => {
     if (!votePopup || popupBusy) return;
+    if (vote === 'NO') {
+      setIsCorrectingPlatform(true);
+      setPlatformCorrectionInput(votePopup.platform || '');
+      return;
+    }
     setPopupBusy(true);
     setPopupError(null);
     try {
@@ -316,13 +368,51 @@ export const RailwayTimeline: React.FC<Props> = ({
         journeyDate
       );
       setPopupVotes(res);
-      if (vote === 'YES' || vote === 'NO') {
+      if (vote === 'YES') {
         triggerContributionMilestone();
-      } else {
-        setVotePopup(null);
       }
+      setVotePopup(null);
     } catch (err) {
       setPopupError(err instanceof Error ? err.message : 'Your vote could not be saved.');
+    } finally {
+      setPopupBusy(false);
+    }
+  };
+
+  const handlePlatformCorrectionSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!votePopup || popupBusy) return;
+    const cleanPlatform = platformCorrectionInput.trim();
+    if (!cleanPlatform) {
+      setPopupError('Please enter a platform number.');
+      return;
+    }
+    setPopupBusy(true);
+    setPopupError(null);
+    try {
+      if (votePopup.platform) {
+        await platformVoteService
+          .submitVote(trainNumber, votePopup.stationCode, votePopup.platform, 'NO', journeyDate)
+          .catch(() => {});
+      }
+      await platformVoteService
+        .submitVote(trainNumber, votePopup.stationCode, cleanPlatform, 'YES', journeyDate)
+        .catch(() => {});
+
+      await railwayApi.savePlatformUpdate(trainNumber, {
+        stationCode: votePopup.stationCode,
+        stationName: votePopup.stationName,
+        oldPlatform: votePopup.platform || '',
+        newPlatform: cleanPlatform,
+        source: 'User Platform Contribution',
+      });
+
+      onEditPlatform?.(votePopup.stationCode, votePopup.stationName, cleanPlatform);
+      triggerContributionMilestone();
+      setIsCorrectingPlatform(false);
+      setVotePopup(null);
+    } catch (err: any) {
+      setPopupError(err.message || 'Your platform update could not be saved.');
     } finally {
       setPopupBusy(false);
     }
@@ -429,6 +519,53 @@ export const RailwayTimeline: React.FC<Props> = ({
   };
 
   const statusBadge = getStatusBadge();
+
+  // Dynamic live-running headline (Section 4 & 10)
+  const getLiveStatusHeadline = () => {
+    if (!status || status.status === 'UNAVAILABLE' || status.status === 'NOT_STARTED') {
+      return `Scheduled • Departs from ${stops[0]?.stationName || 'Source'}`;
+    }
+    const statusUpper = (status.status || '').toUpperCase();
+    if (statusUpper === 'COMPLETED') {
+      return `Arrived at ${destStop?.stationName || 'Terminus'}`;
+    }
+
+    const remainingKm = status.nextStation?.distanceRemainingKm;
+    const targetNextStation = status.nextStation?.name || nextStop?.stationName;
+    const lastReported =
+      status.lastReportedStation?.name ||
+      currentStop?.stationName ||
+      stops[0]?.stationName ||
+      'Station';
+
+    // 1. [x] km to [Station]
+    if (remainingKm != null && remainingKm > 0 && targetNextStation) {
+      return `${remainingKm} km to ${targetNextStation}`;
+    }
+
+    // 2. Between [Station A] and [Station B]
+    if (status.positionType === 'estimated' || status.positionType === 'gps') {
+      const fromStn = lastReported;
+      const toStn = targetNextStation || 'Next Station';
+      return `Between ${fromStn} and ${toStn}`;
+    }
+
+    // 3. At / Arrived / Arriving / Departed
+    if (statusUpper === 'ARRIVED') {
+      return `Arrived at ${lastReported}`;
+    }
+    if (statusUpper === 'ARRIVING') {
+      return `Arriving at ${targetNextStation || lastReported}`;
+    }
+    if (statusUpper === 'AT_STATION' || status.positionType === 'station') {
+      return `At ${lastReported}`;
+    }
+    if (statusUpper === 'DEPARTED') {
+      return `Departed ${lastReported}`;
+    }
+
+    return `Departed ${lastReported}`;
+  };
 
   // Recent platform change alert if any
   const latestPlatformChange = platformUpdates[0];
@@ -600,9 +737,13 @@ export const RailwayTimeline: React.FC<Props> = ({
             <span>View your journey in Map</span>
           </button>
           <a
-            href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(
-              (destStop?.stationName || 'Dahanu Road') + ' Railway Station'
-            )}`}
+            href={
+              destStop?.latitude && destStop?.longitude
+                ? `https://www.google.com/maps/dir/?api=1&destination=${destStop.latitude},${destStop.longitude}`
+                : `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(
+                    (destStop?.stationName || 'Dahanu Road') + ' Railway Station'
+                  )}`
+            }
             target="_blank"
             rel="noopener noreferrer"
             className="py-2 px-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900/60 text-emerald-700 dark:text-emerald-300 font-bold text-xs flex items-center justify-center gap-1.5 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 transition active:scale-98"
@@ -874,15 +1015,22 @@ export const RailwayTimeline: React.FC<Props> = ({
             const stationOps = getOperationsForStation(stop.stationCode);
 
             // Highlight state from timetable sync
+            // Highlight state from timetable sync
             const isSelected =
               selectedStationCode?.toUpperCase() === stop.stationCode.toUpperCase();
 
             // Train between this station and next?
+            const isTrainRunning = status?.status?.toUpperCase() === 'RUNNING';
             const isTrainBetweenHereAndNext =
               trainLocationEnabled &&
               isCurrent &&
-              nextStationStop &&
-              status?.status === 'Running';
+              Boolean(nextStationStop) &&
+              (isTrainRunning ||
+                status?.positionType === 'estimated' ||
+                status?.positionType === 'gps' ||
+                (Boolean(status?.nextStation) &&
+                  status?.nextStation?.code?.toUpperCase() === nextStationStop.stationCode.toUpperCase()) ||
+                Boolean(status?.nextStation?.distanceRemainingKm));
 
             return (
               <React.Fragment key={`${stop.stationCode}_${stop.stopSequence}`}>
@@ -1002,7 +1150,26 @@ export const RailwayTimeline: React.FC<Props> = ({
                         </span>
                       </div>
 
-                      {/* Distance & Platform Badge */}
+                      {/* Section 2 & 3: Current Train Position & Speed when train is stopped at this station */}
+                      {isCurrent && trainLocationEnabled && !isTrainBetweenHereAndNext && (
+                        <div className="mt-2 mb-1 flex items-center gap-3 p-2.5 rounded-2xl bg-blue-50/95 dark:bg-blue-950/80 border-2 border-blue-500/50 dark:border-blue-600/60 shadow-md animate-fade-in">
+                          {renderSpeedCircle('normal')}
+                          <div className="min-w-0">
+                            <span className="text-[10px] font-black uppercase tracking-wider text-blue-600 dark:text-blue-400 flex items-center gap-1">
+                              <span className="w-2 h-2 rounded-full bg-blue-600 animate-ping" />
+                              <span>Current Train Location</span>
+                            </span>
+                            <p className="text-xs sm:text-sm font-black text-slate-900 dark:text-white truncate">
+                              At {stop.stationName} {displayPlatform ? `• Platform ${displayPlatform}` : ''}
+                            </p>
+                            <span className="text-[10px] text-slate-500 dark:text-slate-400">
+                              {formatAgo(status?.updatedAt)}
+                            </span>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Distance & Platform Badge (Platform X ✎) */}
                       <div className="flex items-center gap-2 flex-wrap text-xs text-slate-500 dark:text-slate-400 mt-1">
                         <span className="font-semibold text-slate-600 dark:text-slate-300">
                           {stop.distanceFromSourceKm} km
@@ -1014,42 +1181,45 @@ export const RailwayTimeline: React.FC<Props> = ({
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
+                                setIsCorrectingPlatform(false);
+                                setPlatformCorrectionInput(String(displayPlatform));
                                 setVotePopup({
                                   stationCode: stop.stationCode,
                                   stationName: stop.stationName,
-                                  platform: displayPlatform,
+                                  platform: String(displayPlatform),
                                 });
                               }}
-                              className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-xs font-black bg-blue-100 dark:bg-blue-950/80 text-blue-900 dark:text-blue-200 border border-blue-300 dark:border-blue-700 hover:bg-blue-200 dark:hover:bg-blue-900 transition-colors shadow-2xs cursor-pointer"
-                              title={`Click to view platform verification and vote (Platform ${displayPlatform})`}
+                              className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md text-xs font-black bg-blue-100 dark:bg-blue-950/80 text-blue-900 dark:text-blue-200 border border-blue-300 dark:border-blue-700 hover:bg-blue-200 dark:hover:bg-blue-900 transition-colors shadow-2xs cursor-pointer"
+                              title={`Platform ${displayPlatform} — Click to verify or edit`}
                             >
-                              PF {displayPlatform}
+                              <span>Platform {displayPlatform}</span>
+                              <span className="text-[10px] opacity-75">✎</span>
                             </button>
                           ) : (
-                            <span className="text-[11px] text-slate-400 dark:text-slate-500 italic">
-                              Platform not available
-                            </span>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setIsCorrectingPlatform(true);
+                                setPlatformCorrectionInput('');
+                                setVotePopup({
+                                  stationCode: stop.stationCode,
+                                  stationName: stop.stationName,
+                                  platform: '',
+                                });
+                              }}
+                              className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-[11px] font-bold text-slate-600 dark:text-slate-400 border border-dashed border-slate-300 dark:border-slate-700 hover:border-blue-500 hover:text-blue-600 transition"
+                              title="Add platform number"
+                            >
+                              <span>Platform ?</span>
+                              <span className="text-[10px] opacity-75">✎</span>
+                            </button>
                           )}
                           {isUserUpdatedPlatform && (
                             <span className="text-[10px] font-black uppercase px-1.5 py-0.2 rounded bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 border border-amber-300 dark:border-amber-700">
                               User updated
                             </span>
                           )}
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onEditPlatform?.(
-                                stop.stationCode,
-                                stop.stationName,
-                                String(displayPlatform || '')
-                              );
-                            }}
-                            className="ml-1 text-[11px] font-bold text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-200 underline hover:no-underline"
-                            title="Edit Platform Number"
-                          >
-                            [ADD ✎]
-                          </button>
                         </div>
 
                         {stop.haltMinutes > 0 && (
@@ -1149,37 +1319,36 @@ export const RailwayTimeline: React.FC<Props> = ({
                       {isTrainBetweenHereAndNext && (
                         <div
                           ref={currentTrainRef}
-                          className="relative z-10 ml-6 sm:ml-8 my-2 p-3 bg-gradient-to-r from-blue-900 to-indigo-950 border-2 border-blue-400 rounded-2xl text-white shadow-xl animate-fade-in"
+                          className="relative z-10 ml-6 sm:ml-8 my-3 p-3.5 sm:p-4 bg-gradient-to-r from-blue-900 via-indigo-950 to-slate-950 border-2 border-blue-400 rounded-2xl text-white shadow-xl animate-fade-in"
                         >
-                          <div className="flex items-center justify-between gap-3">
-                            <div className="flex items-center gap-2.5">
-                              <span className="relative flex h-3.5 w-3.5 shrink-0">
-                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
-                                <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-cyan-500"></span>
-                              </span>
-                              <div>
-                                <div className="text-xs font-black uppercase tracking-wider text-cyan-200 flex items-center gap-1.5">
-                                  <span>🚆 Train currently between</span>
+                          <div className="flex items-center justify-between gap-3 sm:gap-4">
+                            <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+                              <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-2xl bg-blue-600/30 border border-blue-400/50 flex items-center justify-center shrink-0 text-white shadow-md">
+                                <Train className="w-5 h-5 sm:w-6 sm:h-6 text-cyan-300 animate-pulse" />
+                              </div>
+                              <div className="min-w-0">
+                                <div className="text-[11px] font-black uppercase tracking-wider text-cyan-300 flex items-center gap-1.5">
+                                  <span className="relative flex h-2.5 w-2.5 shrink-0">
+                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
+                                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-cyan-500"></span>
+                                  </span>
+                                  <span>Train between stations</span>
                                 </div>
-                                <p className="text-sm font-extrabold text-white mt-0.5">
+                                <p className="text-xs sm:text-sm font-extrabold text-white mt-0.5 truncate">
                                   {stop.stationName} → {nextStationStop.stationName}
                                 </p>
-                                <span className="text-[11px] text-blue-200/80">
+                                <span className="text-[10px] sm:text-[11px] text-blue-200/80">
+                                  {status?.nextStation?.distanceRemainingKm !== undefined
+                                    ? `${status.nextStation.distanceRemainingKm} km to ${nextStationStop.stationName} • `
+                                    : ''}
                                   {formatAgo(status?.updatedAt)}
                                 </span>
                               </div>
                             </div>
 
-                            {/* 10. CURRENT SPEED INDICATOR (Circular / Boxed Widget) */}
-                            <div className="shrink-0 flex flex-col items-center">
-                              <div className="w-14 h-14 rounded-2xl bg-slate-950 border-2 border-blue-400 flex flex-col items-center justify-center shadow-lg">
-                                <span className="text-base font-black leading-none font-mono text-cyan-300">
-                                  {currentSpeed ?? '—'}
-                                </span>
-                                <span className="text-[9px] font-bold uppercase tracking-wider text-blue-200 mt-0.5">
-                                  kmph
-                                </span>
-                              </div>
+                            {/* 2. CIRCULAR SPEED INDICATOR */}
+                            <div className="shrink-0 flex items-center">
+                              {renderSpeedCircle('large')}
                             </div>
                           </div>
                         </div>
@@ -1426,7 +1595,7 @@ export const RailwayTimeline: React.FC<Props> = ({
                 RUNNING STATUS
               </span>
               <h3 className="text-sm sm:text-base font-black text-white">
-                Departed {currentStop?.stationName || 'Source'}
+                {getLiveStatusHeadline()}
               </h3>
               <p className="text-[11px] text-blue-200/80">
                 {formatAgo(status?.updatedAt)} &bull; Train #{trainNumber}
@@ -1576,6 +1745,9 @@ export const RailwayTimeline: React.FC<Props> = ({
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                   {votePopup.stationName} ({votePopup.stationCode})
                 </p>
+                <p className="text-[11px] text-slate-400 dark:text-slate-500 font-medium mt-1">
+                  Stops here most of the time
+                </p>
               </div>
               <button
                 type="button"
@@ -1587,48 +1759,83 @@ export const RailwayTimeline: React.FC<Props> = ({
               </button>
             </div>
 
-            {/* Voting Options: Yes | No | Not sure */}
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => handlePopupVote('YES')}
-                disabled={popupBusy}
-                className={`flex-1 py-2.5 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 disabled:opacity-60 ${
-                  popupVotes?.userVoted === 'YES'
-                    ? 'bg-emerald-600 text-white shadow-sm'
-                    : 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 hover:bg-emerald-100'
-                }`}
-              >
-                <ThumbsUp className="w-3.5 h-3.5" />
-                Yes
-              </button>
-              <button
-                type="button"
-                onClick={() => handlePopupVote('NO')}
-                disabled={popupBusy}
-                className={`flex-1 py-2.5 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 disabled:opacity-60 ${
-                  popupVotes?.userVoted === 'NO'
-                    ? 'bg-red-600 text-white shadow-sm'
-                    : 'bg-red-50 dark:bg-red-950/40 text-red-800 dark:text-red-300 hover:bg-red-100'
-                }`}
-              >
-                <ThumbsDown className="w-3.5 h-3.5" />
-                No
-              </button>
-              <button
-                type="button"
-                onClick={() => handlePopupVote('NOT_SURE')}
-                disabled={popupBusy}
-                className={`flex-1 py-2.5 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 disabled:opacity-60 ${
-                  popupVotes?.userVoted === 'NOT_SURE'
-                    ? 'bg-slate-700 text-white shadow-sm'
-                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200'
-                }`}
-              >
-                <HelpCircle className="w-3.5 h-3.5" />
-                Not sure
-              </button>
-            </div>
+            {/* Platform Correction Input OR Voting Options: Yes | No | Not sure */}
+            {isCorrectingPlatform ? (
+              <form onSubmit={handlePlatformCorrectionSubmit} className="space-y-3 pt-1">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    Enter Correct Platform Number:
+                  </label>
+                  <input
+                    type="text"
+                    value={platformCorrectionInput}
+                    onChange={(e) => setPlatformCorrectionInput(e.target.value)}
+                    placeholder="e.g. 1, 2, 3A"
+                    maxLength={10}
+                    className="w-full px-3 py-2 text-sm font-bold rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    autoFocus
+                  />
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsCorrectingPlatform(false)}
+                    className="flex-1 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold text-xs hover:bg-slate-200 transition"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={popupBusy || !platformCorrectionInput.trim()}
+                    className="flex-1 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs disabled:opacity-50 transition shadow-sm"
+                  >
+                    {popupBusy ? 'Saving...' : 'Submit Platform'}
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => handlePopupVote('YES')}
+                  disabled={popupBusy}
+                  className={`flex-1 py-2.5 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 disabled:opacity-60 ${
+                    popupVotes?.userVoted === 'YES'
+                      ? 'bg-emerald-600 text-white shadow-sm'
+                      : 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 hover:bg-emerald-100'
+                  }`}
+                >
+                  <ThumbsUp className="w-3.5 h-3.5" />
+                  Yes
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handlePopupVote('NO')}
+                  disabled={popupBusy}
+                  className={`flex-1 py-2.5 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 disabled:opacity-60 ${
+                    popupVotes?.userVoted === 'NO'
+                      ? 'bg-red-600 text-white shadow-sm'
+                      : 'bg-red-50 dark:bg-red-950/40 text-red-800 dark:text-red-300 hover:bg-red-100'
+                  }`}
+                >
+                  <ThumbsDown className="w-3.5 h-3.5" />
+                  No
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handlePopupVote('NOT_SURE')}
+                  disabled={popupBusy}
+                  className={`flex-1 py-2.5 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 disabled:opacity-60 ${
+                    popupVotes?.userVoted === 'NOT_SURE'
+                      ? 'bg-slate-700 text-white shadow-sm'
+                      : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200'
+                  }`}
+                >
+                  <HelpCircle className="w-3.5 h-3.5" />
+                  Not sure
+                </button>
+              </div>
+            )}
 
             {/* Verification Status & Approval Summary matching Section 23.2 */}
             <div className="text-center py-2 px-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 space-y-1">
@@ -1705,6 +1912,42 @@ export const RailwayTimeline: React.FC<Props> = ({
           <span className="text-xs font-bold">{contributionToast}</span>
         </div>
       )}
+
+      {/* Floating "Inside this train?" control for continuous timeline tracking */}
+      <aside
+        aria-label="Inside this train live tracking"
+        className="fixed bottom-24 right-4 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border border-slate-200 dark:border-slate-800 rounded-full shadow-xl px-3.5 py-2 flex items-center gap-2.5 transition-all hover:shadow-2xl"
+      >
+        <div className="flex items-center gap-1.5">
+          <Train className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+          <span className="text-xs font-black text-slate-800 dark:text-slate-200 whitespace-nowrap">
+            Inside this train?
+          </span>
+        </div>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={insideTrain}
+          onClick={onToggleInsideTrain}
+          className={`relative inline-flex h-6 w-14 shrink-0 cursor-pointer rounded-full transition-colors duration-200 ease-in-out focus:outline-none items-center px-1 shadow-inner ${
+            insideTrain ? 'bg-emerald-600' : 'bg-slate-300 dark:bg-slate-700'
+          }`}
+          title={`Inside this train: ${insideTrain ? 'Yes (Active)' : 'No (Inactive)'}`}
+        >
+          <span
+            className={`text-[9px] font-black uppercase text-white transition-opacity ${
+              insideTrain ? 'ml-1 text-left opacity-100' : 'mr-1 ml-auto text-right opacity-90'
+            }`}
+          >
+            {insideTrain ? 'Yes' : 'No'}
+          </span>
+          <span
+            className={`pointer-events-none absolute h-4 w-4 transform rounded-full bg-white shadow-md transition duration-200 ease-in-out ${
+              insideTrain ? 'right-1' : 'left-1'
+            }`}
+          />
+        </button>
+      </aside>
     </div>
   );
 };

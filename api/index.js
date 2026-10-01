@@ -13,12 +13,18 @@ process.env.SERVERLESS = 'true';
 
 let app = null;
 
+const path = require('path');
+
 try {
   let backend;
   try {
     backend = require('../backend/dist/index.js');
   } catch {
-    backend = require('./backend/dist/index.js');
+    try {
+      backend = require('./backend/dist/index.js');
+    } catch {
+      backend = require(path.join(process.cwd(), 'backend', 'dist', 'index.js'));
+    }
   }
   app = backend.default || backend;
   if (typeof app !== 'function') {

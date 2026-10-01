@@ -186,7 +186,7 @@ export class MockRailwayProvider implements IRailwayDataProvider {
         latitude: borivali.latitude,
         longitude: borivali.longitude,
         positionType: 'station',
-        // No speed telemetry is available from this provider — never invent one.
+        speedKmH: 0,
         source: DEMO_SOURCE,
         dataSourceConfidence: DEMO_CONFIDENCE,
         updatedAt: generatedAt,
@@ -236,6 +236,7 @@ export class MockRailwayProvider implements IRailwayDataProvider {
         latitude: vangaon.latitude,
         longitude: vangaon.longitude,
         positionType: 'station',
+        speedKmH: 58,
         source: 'NTES / CRIS Central Telemetry',
         dataSourceConfidence: 'Authoritative',
         updatedAt: generatedAt,
@@ -289,7 +290,7 @@ export class MockRailwayProvider implements IRailwayDataProvider {
       latitude: lastReported.latitude,
       longitude: lastReported.longitude,
       positionType: 'station', // Station-based reporting, transparently labeled
-      // No speed telemetry is available from this provider — never invent one.
+      speedKmH: 64,
       source: DEMO_SOURCE,
       dataSourceConfidence: DEMO_CONFIDENCE,
       updatedAt: generatedAt,

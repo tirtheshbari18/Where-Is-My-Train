@@ -9,6 +9,7 @@
     "dev:frontend": "npm --prefix frontend run dev",
     "build": "npm --prefix backend run build && npm --prefix frontend run build",
     "test": "npm --prefix backend test",
+    "postinstall": "npm --prefix backend install --include=dev && npm --prefix frontend install --include=dev",
     "install:all": "npm install --include=dev && npm --prefix backend install --include=dev && npm --prefix frontend install --include=dev"
   },
   "allowScripts": {

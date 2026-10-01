@@ -186,8 +186,8 @@ export const TrainOperationsView: React.FC<TrainOperationsViewProps> = ({
                 type="button"
                 onClick={() => setTypeFilter(typeKey)}
                 className={`px-3 py-1 rounded-xl text-xs font-extrabold transition-all active:scale-95 ${isSelected
-                    ? 'bg-blue-500 text-white shadow-md ring-2 ring-white/30'
-                    : 'bg-blue-950/70 text-blue-200 hover:bg-blue-800/80 border border-blue-700/60'
+                  ? 'bg-blue-500 text-white shadow-md ring-2 ring-white/30'
+                  : 'bg-blue-950/70 text-blue-200 hover:bg-blue-800/80 border border-blue-700/60'
                   }`}
               >
                 {label}
