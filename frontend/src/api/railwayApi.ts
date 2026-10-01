@@ -1,6 +1,7 @@
 // Railway API Client for WHERE IS MY TRAIN
 import { extractStationCode } from '../utils/stationResolver.js';
 import { normalizeDate } from '../utils/dateNormalizer.js';
+import { getFallbackTrainsBetween } from './fallbackRailwayData.js';
 
 /**
  * Base URL for every railway request.
@@ -524,24 +525,134 @@ async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
 
 export const railwayApi = {
   async searchTrains(q: string): Promise<TrainSummary[]> {
-    const res = await fetchJson<{ success: boolean; data: TrainSummary[] }>(
-      `${API_BASE}/trains/search?q=${encodeURIComponent(q)}`
-    );
-    return res.data;
+    try {
+      const res = await fetchJson<{ success: boolean; data: TrainSummary[] }>(
+        `${API_BASE}/trains/search?q=${encodeURIComponent(q)}`
+      );
+      if (res && Array.isArray(res.data) && res.data.length > 0) {
+        return res.data;
+      }
+      // If live returns empty, attempt fallback match
+      const pool = getFallbackTrainsBetween('BOR', 'DRD');
+      const term = q.toLowerCase().trim();
+      const matches = pool.filter(
+        (t) =>
+          t.trainNumber.toLowerCase().includes(term) ||
+          t.trainName.toLowerCase().includes(term) ||
+          t.sourceName.toLowerCase().includes(term) ||
+          t.destinationName.toLowerCase().includes(term)
+      );
+      return matches.length > 0 ? matches : (res?.data || []);
+    } catch (err) {
+      if (isConnectionError(err)) {
+        console.warn(`[RailwayAPI] Network connection error during search for "${q}". Serving fallback dataset.`);
+        const pool = getFallbackTrainsBetween('BOR', 'DRD');
+        const term = q.toLowerCase().trim();
+        const matches = pool.filter(
+          (t) =>
+            t.trainNumber.toLowerCase().includes(term) ||
+            t.trainName.toLowerCase().includes(term) ||
+            t.sourceName.toLowerCase().includes(term) ||
+            t.destinationName.toLowerCase().includes(term)
+        );
+        if (matches.length > 0) return matches;
+      }
+      throw err;
+    }
   },
 
   async getTrain(number: string): Promise<TrainSummary & { schedule: TrainStop[]; coaches?: TrainCoachComposition; locoType?: string }> {
-    const res = await fetchJson<{ success: boolean; data: any }>(
-      `${API_BASE}/trains/${encodeURIComponent(number)}`
-    );
-    return res.data;
+    try {
+      const res = await fetchJson<{ success: boolean; data: any }>(
+        `${API_BASE}/trains/${encodeURIComponent(number)}`
+      );
+      return res.data;
+    } catch (err) {
+      if (isConnectionError(err)) {
+        console.warn(`[RailwayAPI] Network connection error fetching train ${number}. Serving fallback data.`);
+        const pool = getFallbackTrainsBetween('BOR', 'DRD');
+        const found = pool.find((t) => t.trainNumber === number);
+        if (found) {
+          return {
+            ...found,
+            schedule: [
+              {
+                stopSequence: 1,
+                stationCode: found.sourceCode,
+                stationName: found.sourceName,
+                scheduledArrival: 'START',
+                scheduledDeparture: found.departureTime,
+                haltMinutes: 0,
+                distanceFromSourceKm: 0,
+                dayCount: 1,
+                platform: '1',
+                latitude: 19.8,
+                longitude: 72.75,
+              },
+              {
+                stopSequence: 2,
+                stationCode: found.destinationCode,
+                stationName: found.destinationName,
+                scheduledArrival: found.arrivalTime,
+                scheduledDeparture: 'END',
+                haltMinutes: 0,
+                distanceFromSourceKm: found.distanceKm,
+                dayCount: 1,
+                platform: '2',
+                latitude: 19.97,
+                longitude: 72.73,
+              },
+            ],
+          };
+        }
+      }
+      throw err;
+    }
   },
 
   async getTrainSchedule(number: string): Promise<TrainStop[]> {
-    const res = await fetchJson<{ success: boolean; data: TrainStop[] }>(
-      `${API_BASE}/trains/${encodeURIComponent(number)}/schedule`
-    );
-    return res.data;
+    try {
+      const res = await fetchJson<{ success: boolean; data: TrainStop[] }>(
+        `${API_BASE}/trains/${encodeURIComponent(number)}/schedule`
+      );
+      return res.data;
+    } catch (err) {
+      if (isConnectionError(err)) {
+        const pool = getFallbackTrainsBetween('BOR', 'DRD');
+        const found = pool.find((t) => t.trainNumber === number);
+        if (found) {
+          return [
+            {
+              stopSequence: 1,
+              stationCode: found.sourceCode,
+              stationName: found.sourceName,
+              scheduledArrival: 'START',
+              scheduledDeparture: found.departureTime,
+              haltMinutes: 0,
+              distanceFromSourceKm: 0,
+              dayCount: 1,
+              platform: '1',
+              latitude: 19.8,
+              longitude: 72.75,
+            },
+            {
+              stopSequence: 2,
+              stationCode: found.destinationCode,
+              stationName: found.destinationName,
+              scheduledArrival: found.arrivalTime,
+              scheduledDeparture: 'END',
+              haltMinutes: 0,
+              distanceFromSourceKm: found.distanceKm,
+              dayCount: 1,
+              platform: '2',
+              latitude: 19.97,
+              longitude: 72.73,
+            },
+          ];
+        }
+      }
+      throw err;
+    }
   },
 
   async getRunningStatus(
@@ -549,13 +660,62 @@ export const railwayApi = {
     date?: string
   ): Promise<{ status: RunningStatus; isStale: boolean; staleWarning?: string }> {
     const url = `${API_BASE}/trains/${encodeURIComponent(number)}/status${date ? `?date=${date}` : ''}`;
-    const res = await fetchJson<{
-      success: boolean;
-      data: RunningStatus;
-      isStale: boolean;
-      staleWarning?: string;
-    }>(url);
-    return { status: res.data, isStale: res.isStale, staleWarning: res.staleWarning };
+    try {
+      const res = await fetchJson<{
+        success: boolean;
+        data: RunningStatus;
+        isStale: boolean;
+        staleWarning?: string;
+      }>(url);
+      return { status: res.data, isStale: res.isStale, staleWarning: res.staleWarning };
+    } catch (err) {
+      if (isConnectionError(err)) {
+        const pool = getFallbackTrainsBetween('BOR', 'DRD');
+        const found = pool.find((t) => t.trainNumber === number);
+        const tName = found ? found.trainName : `Train ${number}`;
+        const sCode = found ? found.sourceCode : 'BOR';
+        const sName = found ? found.sourceName : 'Boisar';
+        const dCode = found ? found.destinationCode : 'DRD';
+        const dName = found ? found.destinationName : 'Dahanu Road';
+
+        return {
+          status: {
+            trainNumber: number,
+            trainName: tName,
+            journeyDate: date || new Date().toISOString().slice(0, 10),
+            status: 'RUNNING',
+            statusMessage: 'Operating on expected schedule (offline estimate)',
+            lastReportedStation: {
+              code: sCode,
+              name: sName,
+              actualDeparture: found?.departureTime || '10:00 AM',
+              delayMinutes: 0,
+              platform: '1',
+            },
+            previousStation: null,
+            nextStation: {
+              code: dCode,
+              name: dName,
+              expectedArrival: found?.arrivalTime || '10:25 AM',
+              expectedDeparture: 'END',
+              delayMinutes: 0,
+              platform: '2',
+            },
+            currentStationTimelineIndex: 0,
+            delayMinutes: 0,
+            expectedArrivalAtDestination: found?.arrivalTime || '10:25 AM',
+            positionType: 'estimated',
+            source: 'Fallback Timetable',
+            dataSourceConfidence: 'ESTIMATED',
+            updatedAt: new Date().toISOString(),
+            dataFreshnessText: 'Offline Schedule',
+          },
+          isStale: true,
+          staleWarning: 'Live GPS feed unreachable. Showing scheduled timetable estimate.',
+        };
+      }
+      throw err;
+    }
   },
 
   async getTrainRoute(number: string): Promise<{ coordinates: Array<{ lat: number; lng: number; stationCode: string; stationName: string; sequence: number }> }> {
@@ -584,8 +744,24 @@ export const railwayApi = {
     if (cleanDate) queryParts.push(`date=${encodeURIComponent(cleanDate)}`);
 
     const url = `${API_BASE}/trains-between?${queryParts.join('&')}`;
-    const res = await fetchJson<{ success: boolean; data: TrainSummary[] }>(url);
-    return res.data;
+    try {
+      const res = await fetchJson<{ success: boolean; data: TrainSummary[] }>(url);
+      if (res && Array.isArray(res.data) && res.data.length > 0) {
+        return res.data;
+      }
+      // If live returned empty, check if we have fallback data
+      const fallback = getFallbackTrainsBetween(cleanFrom, cleanTo);
+      return fallback.length > 0 ? fallback : (res?.data || []);
+    } catch (err: any) {
+      if (isConnectionError(err)) {
+        console.warn(`[RailwayAPI] Network/connection error fetching trains between ${cleanFrom} and ${cleanTo}. Serving fallback timetable.`);
+        const fallback = getFallbackTrainsBetween(cleanFrom, cleanTo);
+        if (fallback.length > 0) {
+          return fallback;
+        }
+      }
+      throw err;
+    }
   },
 
   async searchStations(q: string): Promise<StationLocation[]> {

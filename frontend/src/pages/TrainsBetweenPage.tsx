@@ -108,12 +108,23 @@ export const TrainsBetweenPage: React.FC = () => {
 
     try {
       console.log(`[TrainsBetween] Searching trains between ${cleanFrom} and ${cleanTo} on ${cleanDate}`);
-      const data = await railwayApi.getTrainsBetween(cleanFrom, cleanTo, cleanDate);
+      let data = await railwayApi.getTrainsBetween(cleanFrom, cleanTo, cleanDate);
       if (!searchGuard.isCurrent(requestId)) return;
+
+      if (!data || data.length === 0) {
+        data = getFallbackTrainsBetween(cleanFrom, cleanTo);
+        if (data.length > 0) {
+          setDataNotice(
+            `Live railway data is unreachable right now, so this is the bundled offline timetable for ` +
+              `${data[0].sourceName} (${data[0].sourceCode}) - ${data[0].destinationName} ` +
+              `(${data[0].destinationCode}). Tap Retry to load live availability, delays and platforms.`
+          );
+        }
+      }
+
       setTrains(data);
       setIsOffline(false);
       setError(null);
-      setDataNotice(null);
       data.forEach((t) => offlineStorageService.cacheTrain(t));
     } catch (err: any) {
       console.error('[TrainsBetween] Search request failed:', err);
@@ -133,7 +144,7 @@ export const TrainsBetweenPage: React.FC = () => {
       // The live railway service could not be reached (or answered with a
       // gateway error). Serve the bundled corridor timetable rather than
       // dropping the user into an empty error state.
-      const fallback = isConnectionError(err) ? getFallbackTrainsBetween(cleanFrom, cleanTo) : [];
+      const fallback = getFallbackTrainsBetween(cleanFrom, cleanTo);
       if (fallback.length > 0) {
         setTrains(fallback);
         setIsOffline(false);

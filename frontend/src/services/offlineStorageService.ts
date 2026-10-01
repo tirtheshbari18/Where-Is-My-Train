@@ -116,9 +116,15 @@ export class OfflineStorageService {
     const cache = Object.values(this.getAllCachedTrains());
 
     return cache.filter((train) => {
+      if (
+        train.sourceCode?.toUpperCase() === fCode &&
+        train.destinationCode?.toUpperCase() === tCode
+      ) {
+        return true;
+      }
       const stops = train.schedule || [];
-      const fromIdx = stops.findIndex((s: any) => s.stationCode.toUpperCase() === fCode);
-      const toIdx = stops.findIndex((s: any) => s.stationCode.toUpperCase() === tCode);
+      const fromIdx = stops.findIndex((s: any) => s.stationCode?.toUpperCase() === fCode);
+      const toIdx = stops.findIndex((s: any) => s.stationCode?.toUpperCase() === tCode);
       return fromIdx !== -1 && toIdx !== -1 && fromIdx < toIdx;
     });
   }

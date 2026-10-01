@@ -109,8 +109,12 @@ app.use((req, res) => {
 // Global Error Handler
 app.use(errorHandler);
 
-// Start Server (skipped when running tests or when deployed as a Vercel serverless function)
-const isServerless = !!process.env.VERCEL;
+// Start Server (skipped when running tests or when deployed as a serverless function)
+const isServerless =
+  !!process.env.VERCEL ||
+  !!process.env.AWS_LAMBDA_FUNCTION_NAME ||
+  !!process.env.LAMBDA_TASK_ROOT ||
+  process.env.SERVERLESS === 'true';
 if (process.env.NODE_ENV !== 'test' && !isServerless) {
   app.listen(PORT, () => {
     console.log(`====================================================`);
