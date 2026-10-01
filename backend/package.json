@@ -13,6 +13,10 @@
     "db:push": "prisma db push",
     "db:seed": "tsx src/db/seed.ts"
   },
+  "allowScripts": {
+    "@prisma/client": true,
+    "prisma": true
+  },
   "dependencies": {
     "@prisma/client": "^6.4.1",
     "cors": "^2.8.5",
