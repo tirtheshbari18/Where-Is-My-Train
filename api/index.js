@@ -104,9 +104,23 @@ function handleFallbackRequest(req, res) {
       durationMinutes: r.durationMinutes,
       distanceKm: r.distanceKm,
       zone: 'WR',
-      platform: '1',
+      platform: undefined,
       currentStatus: 'On Time',
       delayMinutes: 0,
+      intermediateStations: ['VGN'],
+      intermediateStationsList: ['Vangaon'],
+      routeStationsText: isDrdtoBor ? 'Dahanu Road → Vangaon → Boisar' : 'Boisar → Vangaon → Dahanu Road',
+      stations: isDrdtoBor
+        ? [
+            { sequence: 1, station_code: 'DRD', station_name: 'Dahanu Road', departure: r.departureTime, halt: 0, stop_status: 'ORIGIN' },
+            { sequence: 2, station_code: 'VGN', station_name: 'Vangaon', halt: 0, stop_status: 'PASS_THROUGH' },
+            { sequence: 3, station_code: 'BOR', station_name: 'Boisar', arrival: r.arrivalTime, halt: 0, stop_status: 'DESTINATION' },
+          ]
+        : [
+            { sequence: 1, station_code: 'BOR', station_name: 'Boisar', departure: r.departureTime, halt: 0, stop_status: 'ORIGIN' },
+            { sequence: 2, station_code: 'VGN', station_name: 'Vangaon', halt: 0, stop_status: 'PASS_THROUGH' },
+            { sequence: 3, station_code: 'DRD', station_name: 'Dahanu Road', arrival: r.arrivalTime, halt: 0, stop_status: 'DESTINATION' },
+          ],
     }));
 
     res.statusCode = 200;

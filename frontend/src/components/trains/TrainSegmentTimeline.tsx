@@ -409,10 +409,15 @@ export const TrainSegmentTimeline: React.FC<Props> = ({
                               <span>
                                 {istop.platform ? `PF ${istop.platform}` : 'Platform not available'}
                               </span>
-                              {istop.haltMinutes > 0 && (
+                              {istop.haltMinutes > 0 ? (
                                 <>
                                   <span>•</span>
                                   <span className="text-amber-600 dark:text-amber-400 font-semibold">{istop.haltMinutes}m halt</span>
+                                </>
+                              ) : (
+                                <>
+                                  <span>•</span>
+                                  <span className="text-slate-500 dark:text-slate-400 font-medium">Pass-through</span>
                                 </>
                               )}
                             </div>

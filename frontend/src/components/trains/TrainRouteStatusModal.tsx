@@ -357,9 +357,18 @@ export const TrainRouteStatusModal: React.FC<Props> = ({
                               <span className="font-mono text-xs font-bold text-blue-600 dark:text-blue-400 bg-blue-100 dark:bg-blue-950/80 px-1.5 py-0.2 rounded">
                                 {stop.stationCode}
                               </span>
-                              {stop.platform && (
+                              {stop.platform ? (
                                 <span className="text-[10px] font-semibold bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 px-1.5 py-0.2 rounded">
                                   PF {stop.platform}
+                                </span>
+                              ) : (
+                                <span className="text-[10px] text-slate-400 bg-slate-50 dark:bg-slate-800 px-1.5 py-0.2 rounded border border-slate-200 dark:border-slate-700">
+                                  Platform: Not available
+                                </span>
+                              )}
+                              {((stop as any).actionType === 'PASS' || stop.haltMinutes === 0) && !isFirst && !isLast && (
+                                <span className="text-[10px] font-semibold bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 px-1.5 py-0.2 rounded">
+                                  Pass-through
                                 </span>
                               )}
                             </div>

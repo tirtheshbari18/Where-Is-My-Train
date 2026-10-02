@@ -117,25 +117,58 @@ function materialise(
   toName: string,
   zone: string = 'WR'
 ): TrainSummary[] {
+  const isBorToDrd = fromCode === 'BOR' && toCode === 'DRD';
+  const isDrdToBor = fromCode === 'DRD' && toCode === 'BOR';
+
   return rows.map(
-    ([trainNumber, trainName, departureTime, arrivalTime, durationMinutes, distanceKm, trainType]) => ({
-      trainNumber,
-      trainName,
-      sourceCode: fromCode,
-      sourceName: fromName,
-      destinationCode: toCode,
-      destinationName: toName,
-      trainType,
-      runningDays: [...DAILY],
-      departureTime,
-      arrivalTime,
-      durationMinutes,
-      distanceKm,
-      zone,
-      platform: '1',
-      currentStatus: 'On Time',
-      delayMinutes: 0,
-    })
+    ([trainNumber, trainName, departureTime, arrivalTime, durationMinutes, distanceKm, trainType]) => {
+      const stations = isBorToDrd
+        ? [
+            { sequence: 1, station_code: 'BOR', station_name: 'Boisar', departure: departureTime, halt: 2, distance_from_source: 0 },
+            { sequence: 2, station_code: 'VGN', station_name: 'Vangaon', halt: 1, distance_from_source: 9.4 },
+            { sequence: 3, station_code: 'DRD', station_name: 'Dahanu Road', arrival: arrivalTime, halt: 0, distance_from_source: 21.7 },
+          ]
+        : isDrdToBor
+        ? [
+            { sequence: 1, station_code: 'DRD', station_name: 'Dahanu Road', departure: departureTime, halt: 5, distance_from_source: 0 },
+            { sequence: 2, station_code: 'VGN', station_name: 'Vangaon', halt: 1, distance_from_source: 12.3 },
+            { sequence: 3, station_code: 'BOR', station_name: 'Boisar', arrival: arrivalTime, halt: 2, distance_from_source: 21.7 },
+          ]
+        : undefined;
+
+      const intermediateStations = isBorToDrd || isDrdToBor ? ['VGN'] : undefined;
+      const intermediateStationsList = isBorToDrd || isDrdToBor ? ['Vangaon'] : undefined;
+      const routeStationsText = isBorToDrd
+        ? 'Boisar → Vangaon → Dahanu Road'
+        : isDrdToBor
+        ? 'Dahanu Road → Vangaon → Boisar'
+        : undefined;
+
+      return {
+        trainNumber,
+        trainName,
+        sourceCode: fromCode,
+        sourceName: fromName,
+        destinationCode: toCode,
+        destinationName: toName,
+        fromStation: { code: fromCode, name: fromName },
+        toStation: { code: toCode, name: toName },
+        trainType,
+        runningDays: [...DAILY],
+        departureTime,
+        arrivalTime,
+        durationMinutes,
+        distanceKm,
+        zone,
+        platform: undefined,
+        currentStatus: 'On Time',
+        delayMinutes: 0,
+        stations,
+        intermediateStations,
+        intermediateStationsList,
+        routeStationsText,
+      };
+    }
   );
 }
 

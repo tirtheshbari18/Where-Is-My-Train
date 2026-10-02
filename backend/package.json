@@ -11,7 +11,16 @@
     "test": "vitest run",
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
-    "db:seed": "tsx src/db/seed.ts"
+    "db:seed": "tsx src/db/seed.ts",
+    "import:zones": "tsx scripts/importZones.ts",
+    "import:divisions": "tsx scripts/importDivisions.ts",
+    "import:stations": "tsx scripts/importStations.ts",
+    "import:trains": "tsx scripts/importTrains.ts",
+    "import:train-stops": "tsx scripts/importTrainStops.ts",
+    "import:platforms": "tsx scripts/importPlatforms.ts",
+    "import:routes": "tsx scripts/importRoutes.ts",
+    "validate:railway-data": "tsx scripts/validateRailwayData.ts",
+    "rebuild:search-index": "tsx scripts/rebuildSearchIndex.ts"
   },
   "allowScripts": {
     "@prisma/client": true,

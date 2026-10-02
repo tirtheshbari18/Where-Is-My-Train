@@ -84,6 +84,28 @@ export interface TrainSummary {
   delayMinutes?: number;
   isLive?: boolean;
   liveStatus?: NormalizedLiveStatus;
+  trainOriginCode?: string;
+  trainOriginName?: string;
+  trainDestinationCode?: string;
+  trainDestinationName?: string;
+  selected_source?: string;
+  selected_destination?: string;
+  departure?: string;
+  arrival?: string;
+  stations?: Array<{
+    sequence: number;
+    station_code: string;
+    station_name: string;
+    arrival?: string;
+    departure?: string;
+    halt?: number;
+    platform?: string;
+    stop_status?: 'STOP' | 'PASS_THROUGH' | 'ORIGIN' | 'DESTINATION' | 'TECHNICAL_STOP';
+    distance_from_source?: number;
+  }>;
+  intermediateStations?: string[];
+  intermediateStationsList?: string[];
+  routeStationsText?: string;
 }
 
 export interface TrainStop {
@@ -98,6 +120,8 @@ export interface TrainStop {
   platform?: string;
   platform_number?: string;
   is_stop?: boolean;
+  stop_status?: 'STOP' | 'PASS_THROUGH' | 'ORIGIN' | 'DESTINATION' | 'TECHNICAL_STOP' | 'TERMINAL';
+  actionType?: 'STOP' | 'PASS' | 'HALT';
   sequence_number?: number;
   actualArrival?: string;
   actualDeparture?: string;

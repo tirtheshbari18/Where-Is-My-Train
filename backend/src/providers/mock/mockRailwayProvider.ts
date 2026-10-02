@@ -514,14 +514,42 @@ export class MockRailwayProvider implements IRailwayDataProvider {
       const isLiveTrain = t.trainNumber === '19016';
       const delay = isLiveTrain ? 4 : 0;
 
+      const segmentStops = t.schedule.slice(fromIndex, toIndex + 1);
+      const intermediateStopsList = segmentStops.slice(1, -1);
+      const stations = segmentStops.map((s, idx) => ({
+        sequence: idx + 1,
+        station_code: s.stationCode,
+        station_name: s.stationName,
+        arrival: formatTo12H(s.scheduledArrival),
+        departure: formatTo12H(s.scheduledDeparture),
+        halt: s.haltMinutes,
+        platform: s.platform || undefined,
+        stop_status: (((s as any).actionType === 'PASS' || s.haltMinutes === 0) ? 'PASS_THROUGH' : 'STOP') as 'STOP' | 'PASS_THROUGH',
+        distance_from_source: s.distanceFromSourceKm,
+      }));
+
+      const intermediateStations = intermediateStopsList.map((s) => s.stationCode);
+      const intermediateStationNames = intermediateStopsList.map((s) => s.stationName);
+      const routeStationsText = segmentStops.map((s) => s.stationName).join(' → ');
+
       return {
         ...this.toSummary(t),
         sourceCode: fromStop.stationCode,
         sourceName: fromStop.stationName,
         destinationCode: toStop.stationCode,
         destinationName: toStop.stationName,
+        trainOriginCode: t.sourceCode,
+        trainOriginName: t.sourceName,
+        trainDestinationCode: t.destinationCode,
+        trainDestinationName: t.destinationName,
+        selected_source: fromStop.stationName,
+        selected_destination: toStop.stationName,
+        fromStation: { code: fromStop.stationCode, name: fromStop.stationName },
+        toStation: { code: toStop.stationCode, name: toStop.stationName },
         departureTime: formatTo12H(rawDep),
         arrivalTime: formatTo12H(rawArr),
+        departure: formatTo12H(rawDep),
+        arrival: formatTo12H(rawArr),
         duration: duration >= 60 ? `${Math.floor(duration / 60)}h ${duration % 60}m` : `${duration} min`,
         durationMinutes: duration,
         distanceKm: distance,
@@ -529,6 +557,10 @@ export class MockRailwayProvider implements IRailwayDataProvider {
         currentStatus: delay > 0 ? `${delay} min late` : 'ON TIME',
         delayMinutes: delay,
         isLive: isLiveTrain,
+        stations,
+        intermediateStations,
+        intermediateStationsList: intermediateStationNames,
+        routeStationsText,
       };
     });
   }
@@ -642,6 +674,7 @@ export class MockRailwayProvider implements IRailwayDataProvider {
             division: (s as any).division ?? undefined,
             address: (s as any).address ?? undefined,
             actionType: (s as any).actionType || (s.haltMinutes > 0 ? 'STOP' : 'PASS'),
+            stop_status: (s as any).stop_status || ((s as any).actionType === 'PASS' || s.haltMinutes === 0 ? 'PASS_THROUGH' : 'STOP'),
             latitude: s.latitude,
             longitude: s.longitude,
           })),
@@ -738,10 +771,15 @@ export class MockRailwayProvider implements IRailwayDataProvider {
       };
     }
 
-    // Only include intermediate stops where the train actually stops for passengers
+    // Include all intermediate stations along the train route between source and destination
     const intermediateStops = schedule
       .slice(fromIdx + 1, toIdx)
-      .filter((s, i) => isPassengerStop(s, fromIdx + 1 + i, schedule.length));
+      .map((s, i) => ({
+        ...s,
+        is_stop: isPassengerStop(s, fromIdx + 1 + i, schedule.length),
+        stop_status: (((s as any).actionType === 'PASS' || s.haltMinutes === 0) ? 'PASS_THROUGH' : 'STOP') as 'STOP' | 'PASS_THROUGH',
+        actionType: (s as any).actionType || (s.haltMinutes > 0 ? 'STOP' : 'PASS'),
+      }));
 
     const journeyDistanceKm = Math.max(0, toStop.distanceFromSourceKm - fromStop.distanceFromSourceKm);
 

@@ -6,8 +6,8 @@ import { normalizeDate } from '../utils/dateNormalizer.js';
 export class TrainsController {
   static async search(req: Request, res: Response, next: NextFunction) {
     try {
-      const from = (req.query.from as string || '').trim();
-      const to = (req.query.to as string || '').trim();
+      const from = (req.query.from as string || req.query.source as string || '').trim();
+      const to = (req.query.to as string || req.query.destination as string || '').trim();
       if (from && to) {
         return TrainsController.getBetweenStations(req, res, next);
       }
@@ -180,8 +180,8 @@ export class TrainsController {
 
   static async getBetweenStations(req: Request, res: Response, next: NextFunction) {
     try {
-      const rawFrom = (req.query.from as string || '').trim();
-      const rawTo = (req.query.to as string || '').trim();
+      const rawFrom = (req.query.from as string || req.query.source as string || '').trim();
+      const rawTo = (req.query.to as string || req.query.destination as string || '').trim();
       const rawDate = req.query.date as string | undefined;
 
       if (!rawFrom || !rawTo) {

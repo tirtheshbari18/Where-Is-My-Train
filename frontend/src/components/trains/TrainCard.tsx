@@ -266,6 +266,28 @@ export const TrainCard: React.FC<Props> = ({
           </div>
         </div>
 
+        {/* Full Service Origin/Destination if different from selected segment */}
+        {train.trainOriginName && train.trainDestinationName && (train.trainOriginCode !== (train.fromStation?.code || train.sourceCode) || train.trainDestinationCode !== (train.toStation?.code || train.destinationCode)) && (
+          <div className="text-[11px] text-slate-500 dark:text-slate-400 mb-2 px-1 flex items-center gap-1.5 truncate">
+            <span className="font-semibold text-slate-400">Service:</span>
+            <span>{train.trainOriginName}</span>
+            <span>→</span>
+            <span>{train.trainDestinationName}</span>
+          </div>
+        )}
+
+        {/* Intermediate Station Route Pathway (e.g. Boisar → Vangaon → Dahanu Road) */}
+        {(train.routeStationsText || (train.intermediateStationsList && train.intermediateStationsList.length > 0)) && (
+          <div className="bg-blue-50/60 dark:bg-blue-950/40 rounded-xl px-3 py-2 border border-blue-100 dark:border-blue-900/40 mb-3 flex items-center justify-between text-xs">
+            <div className="font-semibold text-blue-900 dark:text-blue-200 flex items-center gap-1.5 flex-wrap">
+              <span className="text-[10px] uppercase font-bold text-blue-500 tracking-wider">Route:</span>
+              <span className="font-mono text-xs font-bold text-slate-800 dark:text-slate-100">
+                {train.routeStationsText || `${train.fromStation?.name || train.sourceName} → ${train.intermediateStationsList?.join(' → ')} → ${train.toStation?.name || train.destinationName}`}
+              </span>
+            </div>
+          </div>
+        )}
+
         {/* Live Running Information Card (Requirements 10 & 24) */}
         {hasLive && live ? (
           <div className="bg-emerald-50/70 dark:bg-emerald-950/30 rounded-xl p-3 border border-emerald-200/80 dark:border-emerald-800/60 mb-3 space-y-2">
