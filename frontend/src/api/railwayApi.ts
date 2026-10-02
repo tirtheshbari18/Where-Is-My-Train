@@ -7,7 +7,7 @@ import { getFallbackTrainsBetween } from './fallbackRailwayData.js';
  * Base URL for every railway request.
  *
  * Defaults to the same-origin `/api` prefix, which is what both the local Vite
- * dev proxy and the Vercel rewrite (`/api/*` -> `api/index.js`) serve.
+ * dev proxy and the Vercel multi-service rewrite (`/api/*` -> `backend` service) serve.
  * Override it with `VITE_API_BASE_URL` when the API is hosted elsewhere, e.g.
  *   VITE_API_BASE_URL=https://railway-api.example.com/api
  * A trailing slash is tolerated so `https://host/api/` and `https://host/api`

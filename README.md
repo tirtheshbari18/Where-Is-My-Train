@@ -304,16 +304,10 @@ The repo root is the Vercel project. The root `vercel.json` wires everything tog
 > exactly where `typescript`, `vite`, `tailwindcss` and `prisma` live. The build then dies with
 > `tsc: not found`. `--include=dev` forces them back in and is harmless everywhere else.
 
-Routing defined in `vercel.json`:
+Routing defined in `vercel.json` (Vercel Services multi-service project):
 
-- `/api/*` → `api/index.js`, a Node serverless function that exports the compiled
-  Express app from `backend/dist/index.js` (same routes/controllers/providers as local dev).
-- `/*` → static files from `frontend/dist`, with an SPA fallback to `index.html` so
-  `/train/:number`, `/station/:code`, `/live-station`, `/search`, … survive a hard refresh.
-
-> **Important:** do not set *Root Directory* to `frontend` — that would drop the `/api`
-> rewrite and every search would fail with *"Unable to connect to railway data service."*
-> The frontend never needs its own proxy in this layout.
+- `/api/*` → routed to the `backend` service (`framework: "express"`), executing the production Express API.
+- `/*` → routed to the `frontend` service (`framework: "vite"`), serving static assets with SPA fallback to `index.html` so client-side routing (`/train/:number`, `/station/:code`, `/live-station`, `/search`, …) survives hard refreshes.
 
 Pushing to the default branch triggers a production deployment through the Vercel GitHub
 integration; `vercel --prod` from the CLI also works once `vercel link` has been run.

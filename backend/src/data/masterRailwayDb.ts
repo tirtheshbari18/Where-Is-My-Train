@@ -911,7 +911,7 @@ export function calculateRailwayDistance(fromStationCode: string, toStationCode:
     const fStn = route.stations.find((s) => s.station_code === fCode);
     const tStn = route.stations.find((s) => s.station_code === tCode);
     if (fStn && tStn) {
-      return Math.abs(tStn.km_from_origin - fStn.km_from_origin);
+      return Math.round(Math.abs(tStn.km_from_origin - fStn.km_from_origin));
     }
   }
 
@@ -932,7 +932,7 @@ export function calculateRailwayDistance(fromStationCode: string, toStationCode:
         const d1 = Math.abs(commonStn.km_from_origin - fStn.km_from_origin);
         const juncInR2 = r2.stations.find((s) => s.station_code === juncCode)!;
         const d2 = Math.abs(tStn.km_from_origin - juncInR2.km_from_origin);
-        return d1 + d2;
+        return Math.round(d1 + d2);
       }
     }
   }
