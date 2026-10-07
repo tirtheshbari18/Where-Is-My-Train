@@ -3,6 +3,7 @@
 
 import { railwayApi, TrainSummary, TrainStop } from '../api/railwayApi.js';
 import { offlineStorageService } from './offlineStorageService.js';
+import { getFallbackTrainsBetween, getAllFallbackTrains } from '../api/fallbackRailwayData.js';
 
 export interface TrainFareInfo {
   classCode: string; // "2S", "SL", "3A", "3E", "2A", "1A", "CC", "EC"
@@ -82,6 +83,11 @@ export class TrainService {
     if (!offlineStorageService.isOnline()) {
       const offlineResults = offlineStorageService.searchOfflineTrains(q);
       if (offlineResults.length > 0) return offlineResults as any;
+      const allFallback = getAllFallbackTrains();
+      const matched = allFallback.filter(
+        (t) => t.trainNumber.toLowerCase().includes(q) || t.trainName.toLowerCase().includes(q)
+      );
+      if (matched.length > 0) return matched;
       if (q.includes('05379') || q.includes('lucknow') || q.includes('kasganj') || q.includes('passenger')) {
         return [LUCKNOW_KASGANJ_PASSENGER];
       }
@@ -107,6 +113,11 @@ export class TrainService {
       return liveResults;
     } catch {
       // Offline fallback
+      const allFallback = getAllFallbackTrains();
+      const matched = allFallback.filter(
+        (t) => t.trainNumber.toLowerCase().includes(q) || t.trainName.toLowerCase().includes(q)
+      );
+      if (matched.length > 0) return matched;
       return [LUCKNOW_KASGANJ_PASSENGER];
     }
   }
@@ -122,6 +133,9 @@ export class TrainService {
     if (!offlineStorageService.isOnline()) {
       const cached = offlineStorageService.getCachedTrain(cleanNumber);
       if (cached) return cached;
+      const allFallback = getAllFallbackTrains();
+      const found = allFallback.find((t) => t.trainNumber === cleanNumber);
+      if (found) return found;
     }
 
     try {
@@ -131,6 +145,9 @@ export class TrainService {
     } catch (e) {
       const cached = offlineStorageService.getCachedTrain(cleanNumber);
       if (cached) return cached;
+      const allFallback = getAllFallbackTrains();
+      const found = allFallback.find((t) => t.trainNumber === cleanNumber);
+      if (found) return found;
       throw e;
     }
   }
@@ -146,6 +163,8 @@ export class TrainService {
     if (!offlineStorageService.isOnline()) {
       const cachedBetween = offlineStorageService.searchOfflineBetween(from, to);
       if (cachedBetween.length > 0) return cachedBetween as any;
+      const fallback = getFallbackTrainsBetween(fCode, tCode);
+      if (fallback.length > 0) return fallback;
       if (isLucknowRoute) return [LUCKNOW_KASGANJ_PASSENGER];
     }
 
@@ -156,6 +175,8 @@ export class TrainService {
       }
       return results;
     } catch {
+      const fallback = getFallbackTrainsBetween(fCode, tCode);
+      if (fallback.length > 0) return fallback;
       if (isLucknowRoute) return [LUCKNOW_KASGANJ_PASSENGER];
       return [];
     }

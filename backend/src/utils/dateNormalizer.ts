@@ -56,11 +56,20 @@ export function isOvernight(departureTime: string, arrivalTime: string, dayCount
 /**
  * Accurately calculates duration in minutes taking into account overnight journeys.
  */
-export function calculateDurationMinutes(departureTime: string, arrivalTime: string, dayCount?: number): number {
+export function calculateDurationMinutes(
+  departureTime: string,
+  arrivalTime: string,
+  depDayOrDayCount?: number,
+  arrDay?: number
+): number {
   const depM = parseTimeToMinutes(departureTime);
   const arrM = parseTimeToMinutes(arrivalTime);
-  if (dayCount && dayCount > 1) {
-    return (dayCount - 1) * 1440 + arrM - depM;
+  if (arrDay !== undefined && depDayOrDayCount !== undefined) {
+    const daysDiff = Math.max(0, arrDay - depDayOrDayCount);
+    return daysDiff * 1440 + arrM - depM;
+  }
+  if (depDayOrDayCount && depDayOrDayCount > 1) {
+    return (depDayOrDayCount - 1) * 1440 + arrM - depM;
   }
   if (arrM < depM) {
     // Overnight next-day arrival

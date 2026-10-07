@@ -1,7 +1,7 @@
 // Railway API Client for WHERE IS MY TRAIN
 import { extractStationCode } from '../utils/stationResolver.js';
 import { normalizeDate } from '../utils/dateNormalizer.js';
-import { getFallbackTrainsBetween } from './fallbackRailwayData.js';
+import { getFallbackTrainsBetween, getAllFallbackTrains } from './fallbackRailwayData.js';
 
 /**
  * Base URL for every railway request.
@@ -620,7 +620,7 @@ export const railwayApi = {
         return res.data;
       }
       // If live returns empty, attempt fallback match
-      const pool = getFallbackTrainsBetween('BOR', 'DRD');
+      const pool = getAllFallbackTrains();
       const term = q.toLowerCase().trim();
       const matches = pool.filter(
         (t) =>
@@ -633,7 +633,7 @@ export const railwayApi = {
     } catch (err) {
       if (isConnectionError(err)) {
         console.warn(`[RailwayAPI] Network connection error during search for "${q}". Serving fallback dataset.`);
-        const pool = getFallbackTrainsBetween('BOR', 'DRD');
+        const pool = getAllFallbackTrains();
         const term = q.toLowerCase().trim();
         const matches = pool.filter(
           (t) =>
@@ -657,39 +657,55 @@ export const railwayApi = {
     } catch (err) {
       if (isConnectionError(err)) {
         console.warn(`[RailwayAPI] Network connection error fetching train ${number}. Serving fallback data.`);
-        const pool = getFallbackTrainsBetween('BOR', 'DRD');
+        const pool = getAllFallbackTrains();
         const found = pool.find((t) => t.trainNumber === number);
         if (found) {
+          const schedule: TrainStop[] = (found.stations && found.stations.length > 0)
+            ? found.stations.map((s: any, idx: number) => ({
+                stopSequence: s.sequence || idx + 1,
+                stationCode: s.station_code,
+                stationName: s.station_name,
+                scheduledArrival: s.arrival || (idx === 0 ? 'START' : found.departureTime),
+                scheduledDeparture: s.departure || (idx === (found.stations?.length ?? 1) - 1 ? 'END' : found.arrivalTime),
+                haltMinutes: s.halt || 0,
+                distanceFromSourceKm: s.distance_from_source || (idx * 10),
+                dayCount: 1,
+                platform: s.platform || (s.station_code === 'DRD' ? '2' : s.station_code === 'BOR' ? '3' : '1'),
+                latitude: s.station_code === 'BOR' ? 19.80 : s.station_code === 'DRD' ? 19.97 : 19.88,
+                longitude: s.station_code === 'BOR' ? 72.75 : s.station_code === 'DRD' ? 72.73 : 72.74,
+              }))
+            : [
+                {
+                  stopSequence: 1,
+                  stationCode: found.sourceCode,
+                  stationName: found.sourceName,
+                  scheduledArrival: 'START',
+                  scheduledDeparture: found.departureTime,
+                  haltMinutes: 0,
+                  distanceFromSourceKm: 0,
+                  dayCount: 1,
+                  platform: found.sourceCode === 'DRD' ? '2' : '1',
+                  latitude: 19.8,
+                  longitude: 72.75,
+                },
+                {
+                  stopSequence: 2,
+                  stationCode: found.destinationCode,
+                  stationName: found.destinationName,
+                  scheduledArrival: found.arrivalTime,
+                  scheduledDeparture: 'END',
+                  haltMinutes: 0,
+                  distanceFromSourceKm: found.distanceKm,
+                  dayCount: 1,
+                  platform: found.destinationCode === 'BOR' ? '3' : '2',
+                  latitude: 19.97,
+                  longitude: 72.73,
+                },
+              ];
+
           return {
             ...found,
-            schedule: [
-              {
-                stopSequence: 1,
-                stationCode: found.sourceCode,
-                stationName: found.sourceName,
-                scheduledArrival: 'START',
-                scheduledDeparture: found.departureTime,
-                haltMinutes: 0,
-                distanceFromSourceKm: 0,
-                dayCount: 1,
-                platform: '1',
-                latitude: 19.8,
-                longitude: 72.75,
-              },
-              {
-                stopSequence: 2,
-                stationCode: found.destinationCode,
-                stationName: found.destinationName,
-                scheduledArrival: found.arrivalTime,
-                scheduledDeparture: 'END',
-                haltMinutes: 0,
-                distanceFromSourceKm: found.distanceKm,
-                dayCount: 1,
-                platform: '2',
-                latitude: 19.97,
-                longitude: 72.73,
-              },
-            ],
+            schedule,
           };
         }
       }
@@ -705,9 +721,24 @@ export const railwayApi = {
       return res.data;
     } catch (err) {
       if (isConnectionError(err)) {
-        const pool = getFallbackTrainsBetween('BOR', 'DRD');
+        const pool = getAllFallbackTrains();
         const found = pool.find((t) => t.trainNumber === number);
         if (found) {
+          if (found.stations && found.stations.length > 0) {
+            return found.stations.map((s: any, idx: number) => ({
+              stopSequence: s.sequence || idx + 1,
+              stationCode: s.station_code,
+              stationName: s.station_name,
+              scheduledArrival: s.arrival || (idx === 0 ? 'START' : found.departureTime),
+              scheduledDeparture: s.departure || (idx === (found.stations?.length ?? 1) - 1 ? 'END' : found.arrivalTime),
+              haltMinutes: s.halt || 0,
+              distanceFromSourceKm: s.distance_from_source || (idx * 10),
+              dayCount: 1,
+              platform: s.platform || (s.station_code === 'DRD' ? '2' : s.station_code === 'BOR' ? '3' : '1'),
+              latitude: s.station_code === 'BOR' ? 19.80 : s.station_code === 'DRD' ? 19.97 : 19.88,
+              longitude: s.station_code === 'BOR' ? 72.75 : s.station_code === 'DRD' ? 72.73 : 72.74,
+            }));
+          }
           return [
             {
               stopSequence: 1,
@@ -718,7 +749,7 @@ export const railwayApi = {
               haltMinutes: 0,
               distanceFromSourceKm: 0,
               dayCount: 1,
-              platform: '1',
+              platform: found.sourceCode === 'DRD' ? '2' : '1',
               latitude: 19.8,
               longitude: 72.75,
             },
@@ -731,7 +762,7 @@ export const railwayApi = {
               haltMinutes: 0,
               distanceFromSourceKm: found.distanceKm,
               dayCount: 1,
-              platform: '2',
+              platform: found.destinationCode === 'BOR' ? '3' : '2',
               latitude: 19.97,
               longitude: 72.73,
             },
@@ -757,7 +788,7 @@ export const railwayApi = {
       return { status: res.data, isStale: res.isStale, staleWarning: res.staleWarning };
     } catch (err) {
       if (isConnectionError(err)) {
-        const pool = getFallbackTrainsBetween('BOR', 'DRD');
+        const pool = getAllFallbackTrains();
         const found = pool.find((t) => t.trainNumber === number);
         const tName = found ? found.trainName : `Train ${number}`;
         const sCode = found ? found.sourceCode : 'BOR';

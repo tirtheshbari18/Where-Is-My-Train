@@ -698,13 +698,13 @@ export class MockRailwayProvider implements IRailwayDataProvider {
       return staticSegments;
     }
 
-    const train = await this.getTrain(trainNumber);
+    const train = await this.getTrainByNumber(trainNumber);
     if (!train || !train.schedule || train.schedule.length < 2) {
       return [];
     }
 
     const stoppingStops = train.schedule.filter(
-      (s) =>
+      (s: any) =>
         s.scheduledArrival === 'START' ||
         s.scheduledDeparture === 'END' ||
         (s.haltMinutes !== undefined && s.haltMinutes > 0) ||
@@ -717,10 +717,10 @@ export class MockRailwayProvider implements IRailwayDataProvider {
       const from = scheduleToUse[i];
       const to = scheduleToUse[i + 1];
       const fromIdx = train.schedule.findIndex(
-        (s) => s.stationCode.toUpperCase() === from.stationCode.toUpperCase()
+        (s: any) => s.stationCode.toUpperCase() === from.stationCode.toUpperCase()
       );
       const toIdx = train.schedule.findIndex(
-        (s) => s.stationCode.toUpperCase() === to.stationCode.toUpperCase()
+        (s: any) => s.stationCode.toUpperCase() === to.stationCode.toUpperCase()
       );
 
       const intermediateSlice =
@@ -735,7 +735,7 @@ export class MockRailwayProvider implements IRailwayDataProvider {
         toStationName: to.stationName,
         distanceKm: Math.max(0, to.distanceFromSourceKm - from.distanceFromSourceKm),
         intermediateCount: intermediateSlice.length,
-        intermediateStations: intermediateSlice.map((s, idx) => ({
+        intermediateStations: intermediateSlice.map((s: any, idx: number) => ({
           stopSequence: s.stopSequence || idx + 1,
           stationCode: s.stationCode,
           stationName: s.stationName,

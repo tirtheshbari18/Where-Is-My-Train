@@ -174,16 +174,24 @@ function materialise(
             { sequence: 3, station_code: 'DRD', station_name: 'Dahanu Road', arrival: arrivalTime, halt: 0, distance_from_source: 21.7 },
           ]
         : isDrdToBor
-        ? [
-            { sequence: 1, station_code: 'DRD', station_name: 'Dahanu Road', departure: departureTime, halt: 5, distance_from_source: 0 },
-            { sequence: 2, station_code: 'VGN', station_name: 'Vangaon', halt: 1, distance_from_source: 12.3 },
-            { sequence: 3, station_code: 'BOR', station_name: 'Boisar', arrival: arrivalTime, halt: 2, distance_from_source: 21.7 },
-          ]
+        ? trainNumber === '22954'
+          ? [
+              { sequence: 1, station_code: 'DRD', station_name: 'Dahanu Road', departure: departureTime, halt: 2, distance_from_source: 0, platform: '2' },
+              { sequence: 2, station_code: 'BOR', station_name: 'Boisar', arrival: arrivalTime, halt: 2, distance_from_source: 21, platform: '3' },
+            ]
+          : [
+              { sequence: 1, station_code: 'DRD', station_name: 'Dahanu Road', departure: departureTime, halt: 5, distance_from_source: 0 },
+              { sequence: 2, station_code: 'VGN', station_name: 'Vangaon', halt: 1, distance_from_source: 12.3 },
+              { sequence: 3, station_code: 'BOR', station_name: 'Boisar', arrival: arrivalTime, halt: 2, distance_from_source: 21.7 },
+            ]
         : undefined;
 
-      const intermediateStations = isBorToDrd || isDrdToBor ? ['VGN'] : undefined;
-      const intermediateStationsList = isBorToDrd || isDrdToBor ? ['Vangaon'] : undefined;
-      const routeStationsText = isBorToDrd
+      const isDirectNonStop = trainNumber === '22954';
+      const intermediateStations = isDirectNonStop ? [] : (isBorToDrd || isDrdToBor ? ['VGN'] : undefined);
+      const intermediateStationsList = isDirectNonStop ? [] : (isBorToDrd || isDrdToBor ? ['Vangaon'] : undefined);
+      const routeStationsText = isDirectNonStop
+        ? 'Dahanu Road → Boisar'
+        : isBorToDrd
         ? 'Boisar → Vangaon → Dahanu Road'
         : isDrdToBor
         ? 'Dahanu Road → Vangaon → Boisar'
@@ -205,7 +213,7 @@ function materialise(
         durationMinutes,
         distanceKm,
         zone,
-        platform: undefined,
+        platform: trainNumber === '22954' ? (fromCode === 'DRD' ? '2' : '3') : undefined,
         currentStatus: 'On Time',
         delayMinutes: 0,
         stations,
@@ -340,5 +348,30 @@ export function getFallbackTrainsBetween(from: string, to: string): TrainSummary
 
   // Provide synthetic timetable for any station pair so user is never trapped in error
   return generateDynamicFallbackTrains(fCode, tCode);
+}
+
+/**
+ * Returns all seeded fallback trains across all directions and corridors.
+ * Used for train-number search, train detail lookups, and name matching when offline.
+ */
+export function getAllFallbackTrains(): TrainSummary[] {
+  const all: TrainSummary[] = [];
+  const seen = new Set<string>();
+
+  for (const buildFn of Object.values(CORRIDORS)) {
+    try {
+      const trains = buildFn();
+      for (const t of trains) {
+        if (!seen.has(t.trainNumber)) {
+          seen.add(t.trainNumber);
+          all.push(t);
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  return all;
 }
 
