@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import {
   MapPin,
   RefreshCw,
@@ -13,10 +13,12 @@ import { DelayBadge } from '../components/trains/DelayBadge.js';
 import { useRequestGuard } from '../hooks/useRequestGuard.js';
 
 const QUICK_STATIONS = [
-  { code: 'LJN', name: 'Lucknow Jn' },
-  { code: 'KSJ', name: 'Kasganj Jn' },
+  { code: 'BOR', name: 'Boisar' },
+  { code: 'DRD', name: 'Dahanu Road' },
   { code: 'MMCT', name: 'Mumbai Central' },
   { code: 'BVI', name: 'Borivali' },
+  { code: 'LJN', name: 'Lucknow Jn' },
+  { code: 'KSJ', name: 'Kasganj Jn' },
   { code: 'NDLS', name: 'New Delhi' },
   { code: 'HWH', name: 'Howrah' },
   { code: 'MAS', name: 'Chennai Central' },
@@ -25,16 +27,24 @@ const QUICK_STATIONS = [
 ];
 
 export const LiveStationPage: React.FC = () => {
-  const [selectedStation, setSelectedStation] = useState('MMCT');
+  const { code: paramCode } = useParams<{ code?: string }>();
+  const [selectedStation, setSelectedStation] = useState(paramCode ? paramCode.toUpperCase() : 'MMCT');
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<StationLocation[]>([]);
   const [liveBoard, setLiveBoard] = useState<LiveStationBoard | null>(null);
   const [filterMode, setFilterMode] = useState<'all' | 'arrivals' | 'departures' | 'delayed'>('all');
+  const [timeWindow, setTimeWindow] = useState<'ALL' | '1' | '2' | '4'>('ALL');
   const [loading, setLoading] = useState(true);
   const [refreshCountdown, setRefreshCountdown] = useState(30);
   const [boardError, setBoardError] = useState<string | null>(null);
   const guard = useRequestGuard();
   const searchGuard = useRequestGuard();
+
+  useEffect(() => {
+    if (paramCode && paramCode.toUpperCase() !== selectedStation) {
+      setSelectedStation(paramCode.toUpperCase());
+    }
+  }, [paramCode]);
 
   const fetchBoard = async (code: string) => {
     const reqId = guard.next();
@@ -93,15 +103,37 @@ export const LiveStationPage: React.FC = () => {
     }
   };
 
-  // Compile train list based on filter
+  // Compile train list based on mode and time window filter
   const getDisplayTrains = () => {
     if (!liveBoard) return [];
-    if (filterMode === 'arrivals') return liveBoard.arrivals;
-    if (filterMode === 'departures') return liveBoard.departures;
-    if (filterMode === 'delayed') return liveBoard.delayedTrains;
+    let list =
+      filterMode === 'arrivals'
+        ? liveBoard.arrivals
+        : filterMode === 'departures'
+        ? liveBoard.departures
+        : filterMode === 'delayed'
+        ? liveBoard.delayedTrains
+        : [...liveBoard.departures, ...liveBoard.arrivals];
 
-    // All combined
-    return [...liveBoard.departures, ...liveBoard.arrivals];
+    // Filter by time window (Next 1h, 2h, 4h, All)
+    if (timeWindow !== 'ALL') {
+      const maxMinutes = parseInt(timeWindow, 10) * 60;
+      const now = new Date();
+      const currentMins = now.getHours() * 60 + now.getMinutes();
+
+      list = list.filter((t) => {
+        const timeStr = t.expectedTime || t.scheduledTime;
+        if (!timeStr) return true;
+        const [h, m] = timeStr.replace(/[APM ]/gi, '').split(':').map(Number);
+        if (isNaN(h)) return true;
+        let trainMins = (h % 12 + (timeStr.toUpperCase().includes('PM') ? 12 : 0)) * 60 + (m || 0);
+        let diff = trainMins - currentMins;
+        if (diff < 0) diff += 24 * 60; // Next calendar cycle
+        return diff <= maxMinutes;
+      });
+    }
+
+    return list;
   };
 
   const displayTrains = getDisplayTrains();
@@ -236,6 +268,29 @@ export const LiveStationPage: React.FC = () => {
           >
             Delayed ({liveBoard?.delayedTrains.length ?? 0})
           </button>
+        </div>
+
+        {/* Time Window Filter Pills (Next 1h / 2h / 4h / All) */}
+        <div className="flex items-center gap-1.5 bg-slate-900 p-1 rounded-xl border border-slate-800 text-xs font-semibold">
+          <span className="text-[11px] text-slate-400 px-2">Window:</span>
+          {[
+            { id: '1', label: 'Next 1h' },
+            { id: '2', label: 'Next 2h' },
+            { id: '4', label: 'Next 4h' },
+            { id: 'ALL', label: 'All' },
+          ].map((w) => (
+            <button
+              key={w.id}
+              onClick={() => setTimeWindow(w.id as any)}
+              className={`px-2.5 py-1 rounded-lg transition text-xs ${
+                timeWindow === w.id
+                  ? 'bg-blue-600 text-white font-bold'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              {w.label}
+            </button>
+          ))}
         </div>
 
         <div className="text-xs text-slate-400 font-mono">

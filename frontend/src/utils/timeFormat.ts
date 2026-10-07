@@ -71,3 +71,34 @@ export function getDelayedTimeWithAmPm(timeStr: string | undefined | null, delay
 
   return formatTimeWithAmPm(`${newHours}:${paddedMinutes}`);
 }
+
+/**
+ * Parses time string (e.g., "10:32", "01:22 AM", "02:14 PM", "23:50") to minutes past midnight.
+ */
+export function parseTimeToMinutes(timeStr?: string | null): number {
+  if (!timeStr || timeStr === '--' || timeStr === '--:--' || timeStr === 'START' || timeStr === 'END') return 0;
+  let clean = timeStr.trim();
+  let isPm = false;
+  let isAm = false;
+
+  if (/pm/i.test(clean)) {
+    isPm = true;
+    clean = clean.replace(/pm/i, '').trim();
+  } else if (/am/i.test(clean)) {
+    isAm = true;
+    clean = clean.replace(/am/i, '').trim();
+  }
+
+  const parts = clean.split(':');
+  if (parts.length < 2) return 0;
+
+  let hours = parseInt(parts[0], 10);
+  const minutes = parseInt(parts[1], 10);
+
+  if (isNaN(hours) || isNaN(minutes)) return 0;
+
+  if (isPm && hours < 12) hours += 12;
+  if (isAm && hours === 12) hours = 0;
+
+  return hours * 60 + minutes;
+}

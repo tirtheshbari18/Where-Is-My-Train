@@ -149,12 +149,35 @@ export function normalizeDate(inputDate?: string): {
 }
 
 export function isTrainRunningOnDate(
-  train: { runningDays?: string[]; exceptionDates?: string[] },
-  dateStr: string
+  train: { runningDays?: string[]; exceptionDates?: string[]; trainNumber?: string },
+  dateStr: string,
+  boardingDayCount: number = 1
 ): boolean {
   if (!train.runningDays || train.runningDays.length === 0) return true;
   const normalized = normalizeDate(dateStr);
-  const day3 = normalized.dayOfWeek.toLowerCase().slice(0, 3);
-  return train.runningDays.some((d) => d.toLowerCase().startsWith(day3));
+  if (!normalized.isValid && !dateStr) return true;
+
+  // If train reaches boarding station on day > 1, determine date when train departed origin
+  let checkDateStr = normalized.isoDate;
+  if (boardingDayCount > 1) {
+    const [y, m, d] = normalized.isoDate.split('-').map(Number);
+    const dateObj = new Date(Date.UTC(y, m - 1, d, 12, 0, 0));
+    dateObj.setUTCDate(dateObj.getUTCDate() - (boardingDayCount - 1));
+    const originNormalized = normalizeDate(dateObj.toISOString().split('T')[0]);
+    checkDateStr = originNormalized.isoDate;
+  }
+
+  const originDateNormalized = normalizeDate(checkDateStr);
+  const day3 = originDateNormalized.dayOfWeek.toLowerCase().slice(0, 3);
+  const runsOnDay = train.runningDays.some((d) => d.toLowerCase().startsWith(day3));
+  if (!runsOnDay) return false;
+
+  // Check exception dates if present
+  if (train.exceptionDates && train.exceptionDates.includes(checkDateStr)) {
+    return false;
+  }
+
+  return true;
 }
+
 

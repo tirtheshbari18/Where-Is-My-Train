@@ -24,6 +24,11 @@ import { SettingsPage } from './pages/SettingsPage.js';
 import { AdminPage } from './pages/AdminPage.js';
 import { RailwayMapPage } from './pages/RailwayMapPage.js';
 import { RoutePage } from './pages/RoutePage.js';
+import { JourneyPlannerPage } from './pages/JourneyPlannerPage.js';
+import { SeatAvailabilityPage } from './pages/SeatAvailabilityPage.js';
+import { TrainExceptionsPage } from './pages/TrainExceptionsPage.js';
+import { RailwayZonesPage } from './pages/RailwayZonesPage.js';
+import { RailwayDivisionsPage } from './pages/RailwayDivisionsPage.js';
 
 export const App: React.FC = () => {
   return (
@@ -38,15 +43,29 @@ export const App: React.FC = () => {
                 <Routes>
                   <Route path="/" element={<HomePage />} />
                   <Route path="/search" element={<TrainSearchPage />} />
+                  <Route path="/trains" element={<TrainSearchPage />} />
+                  <Route path="/trains/:number" element={<TrainDetailsPage />} />
                   <Route path="/live" element={<LiveTrainsPage />} />
+                  <Route path="/live-trains" element={<LiveTrainsPage />} />
+                  <Route path="/live/:number" element={<TrainDetailsPage />} />
                   <Route path="/train/:number" element={<TrainDetailsPage />} />
                   <Route path="/station/:code" element={<StationPage />} />
+                  <Route path="/stations" element={<StationPage />} />
                   <Route path="/stations/:code" element={<StationPage />} />
                   <Route path="/live-station" element={<LiveStationPage />} />
+                  <Route path="/live-station/:code" element={<LiveStationPage />} />
+                  <Route path="/station-live" element={<LiveStationPage />} />
+                  <Route path="/station-live/:code" element={<LiveStationPage />} />
                   <Route path="/trains-between" element={<TrainsBetweenPage />} />
                   <Route path="/routes" element={<RoutePage />} />
                   <Route path="/routes/:id" element={<RoutePage />} />
                   <Route path="/map" element={<RailwayMapPage />} />
+                  <Route path="/railway-map" element={<RailwayMapPage />} />
+                  <Route path="/journey-planner" element={<JourneyPlannerPage />} />
+                  <Route path="/seat-availability" element={<SeatAvailabilityPage />} />
+                  <Route path="/exceptions" element={<TrainExceptionsPage />} />
+                  <Route path="/railway-zones" element={<RailwayZonesPage />} />
+                  <Route path="/railway-divisions" element={<RailwayDivisionsPage />} />
                   <Route path="/alerts" element={<AlertsPage />} />
                   <Route path="/favourites" element={<FavouritesPage />} />
                   <Route path="/pnr" element={<PnrPage />} />

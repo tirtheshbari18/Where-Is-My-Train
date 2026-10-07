@@ -252,6 +252,20 @@ export interface DetailedTimetableRow {
   isIntermediate?: boolean;
 }
 
+export interface TrainException {
+  trainNumber: string;
+  trainName: string;
+  sourceCode: string;
+  sourceName: string;
+  destCode: string;
+  destName: string;
+  exceptionType: 'CANCELLED' | 'DIVERTED' | 'RESCHEDULED' | 'SPECIAL';
+  reason: string;
+  effectiveDate: string;
+  divertedRoute?: string;
+  rescheduledTime?: string;
+}
+
 export interface RunningStatus {
   trainNumber: string;
   trainName: string;
@@ -1332,5 +1346,9 @@ export const railwayApi = {
       `${API_BASE}/trains/${encodeURIComponent(trainNumber)}/segment?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`
     );
     return res.data;
+  },
+
+  async getTrainExceptions(type?: string): Promise<TrainException[]> {
+    return this.getExceptions(type);
   },
 };

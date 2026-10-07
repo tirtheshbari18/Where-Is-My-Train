@@ -37,6 +37,9 @@ import { TrainOperationsView } from '../components/trains/TrainOperationsView.js
 import { RailwayNetworkMap } from '../components/map/RailwayNetworkMap.js';
 import { CoachPosition } from '../components/trains/CoachPosition.js';
 import { RailfanView } from '../components/trains/RailfanView.js';
+import { LiveJourneyDashboard } from '../components/trains/LiveJourneyDashboard.js';
+import { SpeedMode } from '../components/trains/CircularSpeedometer.js';
+import { useInsideTrainSpeed } from '../hooks/useInsideTrainSpeed.js';
 import { storage } from '../utils/storage.js';
 import { useTranslation } from '../context/LanguageContext.js';
 import { useRequestGuard } from '../hooks/useRequestGuard.js';
@@ -93,6 +96,21 @@ export const TrainDetailsPage: React.FC = () => {
       return next;
     });
   };
+
+  const { speedKmH, speedSource } = useInsideTrainSpeed({
+    insideTrain,
+    providerSpeedKmH: status?.speedKmH,
+    trainStatus: status?.status,
+  });
+
+  const speedMode: SpeedMode =
+    speedKmH === null
+      ? 'UNAVAILABLE'
+      : speedSource === 'provider' || speedSource === 'gps'
+      ? 'LIVE SPEED'
+      : speedSource === 'stopped'
+      ? 'LIVE SPEED'
+      : 'ESTIMATED SPEED';
 
   // Race protection: only the most recent request may update state
   const dataGuard = useRequestGuard();
@@ -819,6 +837,17 @@ export const TrainDetailsPage: React.FC = () => {
         {/* TAB 1: RUNNING STATUS & INTERACTIVE TIMELINE (With Detailed Timetable Below) */}
         {activeTab === 'timeline' && (
           <div className="space-y-6">
+            {insideTrain && (
+              <LiveJourneyDashboard
+                trainNumber={train.trainNumber}
+                trainName={train.trainName}
+                runningStatus={status}
+                schedule={schedule}
+                speedKmH={speedKmH}
+                speedMode={speedMode}
+                onRefresh={() => fetchTrainData(true)}
+              />
+            )}
             <RailwayTimeline
               stops={schedule}
               currentIndex={currentIndex}

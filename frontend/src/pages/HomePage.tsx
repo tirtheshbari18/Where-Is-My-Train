@@ -8,6 +8,17 @@ import {
   Activity,
   MapPin,
   Sparkles,
+  ArrowLeftRight,
+  Radio,
+  Clock,
+  Calendar,
+  Ticket,
+  Map,
+  GitFork,
+  Zap,
+  Armchair,
+  ShieldAlert,
+  Network,
 } from 'lucide-react';
 import { railwayApi, TrainSummary } from '../api/railwayApi.js';
 import { TrainCard } from '../components/trains/TrainCard.js';
@@ -66,6 +77,119 @@ export const HomePage: React.FC = () => {
           <div className="space-y-6 animate-in fade-in duration-200">
             {/* 1. Main Express Search Card */}
             <ExpressSearchCard />
+
+            {/* Quick Actions (Section 36) */}
+            <section className="space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-wider flex items-center gap-2">
+                  <Zap className="w-4 h-4 text-blue-500" />
+                  <span>Indian Railway Quick Services</span>
+                </h3>
+                <span className="text-xs text-slate-500 font-medium">NTES & CRIS Direct</span>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2.5">
+                {[
+                  {
+                    to: '/trains-between',
+                    label: 'Trains Between',
+                    desc: 'Source to Dest',
+                    icon: <ArrowLeftRight className="w-5 h-5 text-blue-400" />,
+                    bg: 'hover:border-blue-500/50',
+                  },
+                  {
+                    to: '/live-trains',
+                    label: 'Live Train',
+                    desc: 'GPS Telemetry',
+                    icon: <Radio className="w-5 h-5 text-emerald-400" />,
+                    bg: 'hover:border-emerald-500/50',
+                  },
+                  {
+                    to: '/live-station',
+                    label: 'Live Station',
+                    desc: 'Departures Board',
+                    icon: <Clock className="w-5 h-5 text-amber-400" />,
+                    bg: 'hover:border-amber-500/50',
+                  },
+                  {
+                    to: '/search',
+                    label: 'Train Schedule',
+                    desc: 'Full Timetable',
+                    icon: <Calendar className="w-5 h-5 text-purple-400" />,
+                    bg: 'hover:border-purple-500/50',
+                  },
+                  {
+                    to: '/pnr',
+                    label: 'PNR Status',
+                    desc: 'Berth & Chart',
+                    icon: <Ticket className="w-5 h-5 text-rose-400" />,
+                    bg: 'hover:border-rose-500/50',
+                  },
+                  {
+                    to: '/railway-map',
+                    label: 'Railway Map',
+                    desc: 'Interactive Network',
+                    icon: <Map className="w-5 h-5 text-cyan-400" />,
+                    bg: 'hover:border-cyan-500/50',
+                  },
+                  {
+                    to: '/journey-planner',
+                    label: 'Journey Planner',
+                    desc: 'Multi-Modal Route',
+                    icon: <GitFork className="w-5 h-5 text-teal-400" />,
+                    bg: 'hover:border-teal-500/50',
+                  },
+                ].map((act, i) => (
+                  <Link
+                    key={i}
+                    to={act.to}
+                    className={`bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-3 rounded-2xl flex flex-col items-center text-center transition-all hover:scale-[1.02] shadow-sm ${act.bg}`}
+                  >
+                    <div className="mb-2 p-2 rounded-xl bg-slate-100 dark:bg-slate-800/80">
+                      {act.icon}
+                    </div>
+                    <span className="text-xs font-black text-slate-900 dark:text-white leading-tight">
+                      {act.label}
+                    </span>
+                    <span className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">
+                      {act.desc}
+                    </span>
+                  </Link>
+                ))}
+              </div>
+
+              {/* Secondary Quick Action Bar */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
+                <Link
+                  to="/seat-availability"
+                  className="p-2.5 rounded-xl bg-emerald-950/20 border border-emerald-500/20 hover:border-emerald-500/40 text-emerald-400 text-xs font-bold flex items-center justify-center gap-1.5 transition"
+                >
+                  <Armchair className="w-4 h-4" />
+                  <span>Seat Availability</span>
+                </Link>
+                <Link
+                  to="/exceptions"
+                  className="p-2.5 rounded-xl bg-rose-950/20 border border-rose-500/20 hover:border-rose-500/40 text-rose-400 text-xs font-bold flex items-center justify-center gap-1.5 transition"
+                >
+                  <ShieldAlert className="w-4 h-4" />
+                  <span>Train Exceptions</span>
+                </Link>
+                <Link
+                  to="/railway-zones"
+                  className="p-2.5 rounded-xl bg-blue-950/20 border border-blue-500/20 hover:border-blue-500/40 text-blue-400 text-xs font-bold flex items-center justify-center gap-1.5 transition"
+                >
+                  <Network className="w-4 h-4" />
+                  <span>18 Railway Zones</span>
+                </Link>
+                <Link
+                  to="/railway-divisions"
+                  className="p-2.5 rounded-xl bg-indigo-950/20 border border-indigo-500/20 hover:border-indigo-500/40 text-indigo-400 text-xs font-bold flex items-center justify-center gap-1.5 transition"
+                >
+                  <Layers className="w-4 h-4" />
+                  <span>71 Divisions</span>
+                </Link>
+              </div>
+            </section>
 
             {/* 2. Recent Searches Card */}
             <RecentSearchesCard />

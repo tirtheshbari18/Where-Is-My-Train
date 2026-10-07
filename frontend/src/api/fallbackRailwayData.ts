@@ -228,20 +228,20 @@ function materialise(
 const CORRIDORS: Record<string, () => TrainSummary[]> = {
   'BOR>DRD': () => materialise(BOISAR_TO_DAHANU, 'BOR', 'Boisar', 'DRD', 'Dahanu Road', 'WR'),
   'DRD>BOR': () => materialise(DAHANU_TO_BOISAR, 'DRD', 'Dahanu Road', 'BOR', 'Boisar', 'WR'),
-  'VR>DRD': () => materialise(BOISAR_TO_DAHANU.slice(0, 15), 'VR', 'Virar', 'DRD', 'Dahanu Road', 'WR'),
-  'DRD>VR': () => materialise(DAHANU_TO_BOISAR.slice(0, 12), 'DRD', 'Dahanu Road', 'VR', 'Virar', 'WR'),
-  'CCG>DRD': () => materialise(BOISAR_TO_DAHANU.filter((r) => r[1].includes('Churchgate')), 'CCG', 'Churchgate', 'DRD', 'Dahanu Road', 'WR'),
-  'DRD>CCG': () => materialise(DAHANU_TO_BOISAR.filter((r) => r[1].includes('Churchgate')), 'DRD', 'Dahanu Road', 'CCG', 'Churchgate', 'WR'),
+  'VR>DRD': () => materialise(BOISAR_TO_DAHANU, 'VR', 'Virar', 'DRD', 'Dahanu Road', 'WR'),
+  'DRD>VR': () => materialise(DAHANU_TO_BOISAR, 'DRD', 'Dahanu Road', 'VR', 'Virar', 'WR'),
+  'CCG>DRD': () => materialise(BOISAR_TO_DAHANU.filter((r) => r[1].includes('Churchgate') || r[6].includes('Local')), 'CCG', 'Churchgate', 'DRD', 'Dahanu Road', 'WR'),
+  'DRD>CCG': () => materialise(DAHANU_TO_BOISAR.filter((r) => r[1].includes('Churchgate') || r[6].includes('Local')), 'DRD', 'Dahanu Road', 'CCG', 'Churchgate', 'WR'),
   'MMCT>ADI': () => materialise(MUMBAI_TO_AHMEDABAD, 'MMCT', 'Mumbai Central', 'ADI', 'Ahmedabad Junction', 'WR'),
   'ADI>MMCT': () => materialise(AHMEDABAD_TO_MUMBAI, 'ADI', 'Ahmedabad Junction', 'MMCT', 'Mumbai Central', 'WR'),
   'NDLS>MMCT': () => materialise(DELHI_TO_MUMBAI, 'NDLS', 'New Delhi', 'MMCT', 'Mumbai Central', 'NR'),
   'MMCT>NDLS': () => materialise(MUMBAI_TO_DELHI, 'MMCT', 'Mumbai Central', 'NDLS', 'New Delhi', 'WR'),
   'LJN>KSJ': () => materialise(LUCKNOW_TO_KASGANJ, 'LJN', 'Lucknow Junction NER', 'KSJ', 'Kasganj Junction', 'NER'),
   'KSJ>LJN': () => materialise(KASGANJ_TO_LUCKNOW, 'KSJ', 'Kasganj Junction', 'LJN', 'Lucknow Junction NER', 'NER'),
-  'PLG>BOR': () => materialise(BOISAR_TO_DAHANU.slice(0, 8), 'PLG', 'Palghar', 'BOR', 'Boisar', 'WR'),
-  'BOR>PLG': () => materialise(DAHANU_TO_BOISAR.slice(0, 8), 'BOR', 'Boisar', 'PLG', 'Palghar', 'WR'),
-  'BVI>BOR': () => materialise(BOISAR_TO_DAHANU.slice(0, 10), 'BVI', 'Borivali', 'BOR', 'Boisar', 'WR'),
-  'BOR>BVI': () => materialise(DAHANU_TO_BOISAR.slice(0, 10), 'BOR', 'Boisar', 'BVI', 'Borivali', 'WR'),
+  'PLG>BOR': () => materialise(BOISAR_TO_DAHANU, 'PLG', 'Palghar', 'BOR', 'Boisar', 'WR'),
+  'BOR>PLG': () => materialise(DAHANU_TO_BOISAR, 'BOR', 'Boisar', 'PLG', 'Palghar', 'WR'),
+  'BVI>BOR': () => materialise(BOISAR_TO_DAHANU, 'BVI', 'Borivali', 'BOR', 'Boisar', 'WR'),
+  'BOR>BVI': () => materialise(DAHANU_TO_BOISAR, 'BOR', 'Boisar', 'BVI', 'Borivali', 'WR'),
 };
 
 /**

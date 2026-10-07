@@ -28,7 +28,7 @@ import {
   MOCK_PLATFORM_UPDATES,
 } from './mockRailwayData.js';
 import { MOCK_PNR_RECORDS } from './mockPnrData.js';
-import { normalizeDate } from '../../utils/dateNormalizer.js';
+import { normalizeDate, isTrainRunningOnDate } from '../../utils/dateNormalizer.js';
 
 // Haversine formula to calculate distance between two coordinates in km
 function calculateDistanceKm(
@@ -80,14 +80,39 @@ export class MockRailwayProvider implements IRailwayDataProvider {
       return MOCK_TRAINS.map((t) => this.toSummary(t));
     }
 
+    // Check if query is formatted like "From to To" or "From - To"
+    const betweenMatch = q.match(/^(.+?)\s+(?:to|-)\s+(.+)$/i);
+    if (betweenMatch) {
+      const fromPart = betweenMatch[1].trim();
+      const toPart = betweenMatch[2].trim();
+      const fromStn = MOCK_STATIONS.find(
+        (s) => s.code.toLowerCase() === fromPart.toLowerCase() || isFuzzyMatch(s.name, fromPart)
+      );
+      const toStn = MOCK_STATIONS.find(
+        (s) => s.code.toLowerCase() === toPart.toLowerCase() || isFuzzyMatch(s.name, toPart)
+      );
+      if (fromStn && toStn) {
+        return this.getTrainsBetweenStations(fromStn.code, toStn.code);
+      }
+    }
+
     const matches = MOCK_TRAINS.filter((train) => {
-      return (
+      if (
         train.trainNumber.includes(q) ||
         isFuzzyMatch(train.trainName, q) ||
         isFuzzyMatch(train.sourceName, q) ||
         isFuzzyMatch(train.destinationName, q) ||
         train.sourceCode.toLowerCase() === q.toLowerCase() ||
         train.destinationCode.toLowerCase() === q.toLowerCase()
+      ) {
+        return true;
+      }
+
+      // Check if train serves the searched station as an intermediate scheduled stop
+      return train.schedule.some(
+        (s) =>
+          s.stationCode.toLowerCase() === q.toLowerCase() ||
+          isFuzzyMatch(s.stationName, q)
       );
     });
 
@@ -454,15 +479,19 @@ export class MockRailwayProvider implements IRailwayDataProvider {
       if (!isPassengerStop(fromStop, fromIndex, train.schedule.length)) return false;
       if (!isPassengerStop(toStop, toIndex, train.schedule.length)) return false;
 
-      // Filter by travel date running days if travel date is provided
+      // Filter by travel date running days and cancellations if travel date is provided
       if (_date) {
-        const { dayOfWeek, isValid } = normalizeDate(_date);
-        if (isValid && train.runningDays && train.runningDays.length > 0) {
-          const runsOnSelectedDay = train.runningDays.some(
-            (d) => d.toUpperCase().slice(0, 3) === dayOfWeek.toUpperCase().slice(0, 3)
-          );
-          if (!runsOnSelectedDay) return false;
-        }
+        const boardingDayCount = fromStop.dayCount ?? (fromStop as any).day ?? 1;
+        const cancelledException = MOCK_EXCEPTIONS.find(
+          (e) => e.trainNumber === train.trainNumber && e.exceptionType === 'CANCELLED'
+        );
+        const exceptionDates = cancelledException ? [cancelledException.effectiveDate] : [];
+        const isRunning = isTrainRunningOnDate(
+          { ...train, exceptionDates },
+          _date,
+          boardingDayCount
+        );
+        if (!isRunning) return false;
       }
 
       return true;

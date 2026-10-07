@@ -7,6 +7,7 @@ import { offlineStorageService } from '../services/offlineStorageService.js';
 import { useTranslation } from '../context/LanguageContext.js';
 import { useRequestGuard } from '../hooks/useRequestGuard.js';
 import { PRIMARY_FILTER_CATEGORIES, matchesCategory } from '../utils/trainCategory.js';
+import { parseTimeToMinutes } from '../utils/timeFormat.js';
 
 // Master category filter pills from Section 9 (ALL, EXPRESS, LOCALS, SUPERFAST, WEEKLY, etc.)
 const TRAIN_TYPES = PRIMARY_FILTER_CATEGORIES;
@@ -95,7 +96,8 @@ export const TrainSearchPage: React.FC = () => {
 
       // Filter by departure time slot
       if (selectedTimeSlot !== 'ALL') {
-        const [h] = (t.departureTime || '00:00').split(':').map(Number);
+        const totalMinutes = parseTimeToMinutes(t.departureTime);
+        const h = Math.floor(totalMinutes / 60);
         if (selectedTimeSlot === 'morning' && (h < 4 || h >= 12)) return false;
         if (selectedTimeSlot === 'afternoon' && (h < 12 || h >= 17)) return false;
         if (selectedTimeSlot === 'evening' && (h < 17 || h >= 21)) return false;
@@ -109,10 +111,10 @@ export const TrainSearchPage: React.FC = () => {
         return (a.durationMinutes || 0) - (b.durationMinutes || 0);
       }
       if (sortBy === 'departure') {
-        return (a.departureTime || '').localeCompare(b.departureTime || '');
+        return parseTimeToMinutes(a.departureTime) - parseTimeToMinutes(b.departureTime);
       }
       if (sortBy === 'arrival') {
-        return (a.arrivalTime || '').localeCompare(b.arrivalTime || '');
+        return parseTimeToMinutes(a.arrivalTime) - parseTimeToMinutes(b.arrivalTime);
       }
       return 0;
     });
