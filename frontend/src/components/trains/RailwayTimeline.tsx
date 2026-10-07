@@ -4,7 +4,6 @@ import {
   Train,
   Check,
   AlertCircle,
-  Radio,
   ChevronDown,
   ChevronUp,
   ChevronRight,
@@ -32,6 +31,7 @@ import { platformVoteService, PlatformVoteResult } from '../../services/platform
 import { isDemoSource } from '../../services/trackingService.js';
 import { useTranslation } from '../../context/LanguageContext.js';
 import { LiveTrackingStatusBanner } from './LiveTrackingStatusBanner.js';
+import { useInsideTrainSpeed } from '../../hooks/useInsideTrainSpeed.js';
 
 interface Props {
   stops: TrainStop[];
@@ -71,7 +71,7 @@ interface Props {
   journeyDate?: string;
 }
 
-// Helper: Format 24-hr time '04:45' to '4:45 AM'
+// Helper: Format 24-hr time '04:45' to '04:45 AM'
 function formatDisplayTime(timeStr?: string): string {
   if (!timeStr || timeStr === '--' || timeStr === 'START' || timeStr === 'END') {
     return '--:--';
@@ -88,7 +88,8 @@ function formatDisplayTime(timeStr?: string): string {
   const ampm = hours >= 12 ? 'PM' : 'AM';
   hours = hours % 12;
   hours = hours ? hours : 12; // '0' becomes '12'
-  return `${hours}:${minutes} ${ampm}`;
+  const paddedHours = String(hours).padStart(2, '0');
+  return `${paddedHours}:${minutes} ${ampm}`;
 }
 
 // Helper: Add delay minutes to time string '04:45' -> '4:53 AM'
@@ -183,19 +184,7 @@ export const RailwayTimeline: React.FC<Props> = ({
   const currentTrainRef = useRef<HTMLDivElement | null>(null);
   const stationRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
-  // 1. Train Location sliding toggle (ON / OFF) - Stored in localStorage
-  const [trainLocationEnabled, setTrainLocationEnabled] = useState<boolean>(() => {
-    const saved = localStorage.getItem('wimt_train_location_enabled');
-    return saved !== null ? saved === 'true' : true;
-  });
-
-  const handleToggleLocation = () => {
-    setTrainLocationEnabled((prev) => {
-      const next = !prev;
-      localStorage.setItem('wimt_train_location_enabled', String(next));
-      return next;
-    });
-  };
+  const trainLocationEnabled = insideTrain;
 
   // "INSIDE THIS TRAIN?" Feature (Section 7) — state is owned by TrainDetailsPage
   // so tracking also drives the auto-refresh interval there.
@@ -239,38 +228,38 @@ export const RailwayTimeline: React.FC<Props> = ({
   };
 
   /**
-   * Section 2: Circular Speed Indicator
-   * Displays dynamic speed as large bold number and 'km/h' underneath.
-   * Fallback to '—' when telemetry is not reported.
+   * Section 2, 19, 20 & 58: Small Circular Speed Indicator
+   * Displays dynamic speed with small circle, bold number, and km/h underneath.
+   * Smoothly animated, 0 km/h when stopped, -- km/h when unavailable.
    */
-  const renderSpeedCircle = (size: 'normal' | 'large' = 'normal') => {
-    const speedVal = currentSpeed !== null && currentSpeed !== undefined ? currentSpeed : null;
-    const isEstimated = status?.positionType === 'estimated';
+  const {
+    speedKmH,
+    speedText,
+    permissionDenied,
+    retryLocation,
+  } = useInsideTrainSpeed({
+    insideTrain,
+    providerSpeedKmH: status?.speedKmH,
+    trainStatus: status?.status,
+  });
 
+  const renderSpeedCircle = (size: 'normal' | 'large' = 'normal') => {
     return (
       <div
-        className={`rounded-full bg-white dark:bg-slate-900 border-2 sm:border-[3px] border-blue-600 dark:border-blue-400 shadow-xl flex flex-col items-center justify-center shrink-0 z-20 transition-all select-none ${
+        className={`rounded-full bg-slate-900 border-2 border-emerald-400 shadow-xl flex flex-col items-center justify-center shrink-0 z-20 transition-all duration-300 select-none ${
           size === 'large'
-            ? 'w-16 h-16 sm:w-20 sm:h-20 ring-4 ring-blue-500/20'
-            : 'w-14 h-14 sm:w-16 sm:h-16 ring-2 ring-blue-500/20'
+            ? 'w-16 h-16 sm:w-20 sm:h-20 ring-4 ring-emerald-500/20'
+            : 'w-14 h-14 sm:w-16 sm:h-16 ring-2 ring-emerald-500/20'
         }`}
-        title={
-          speedVal !== null
-            ? `Train speed: ${speedVal} km/h${isEstimated ? ' (estimated)' : ''}`
-            : 'Speed telemetry unavailable from provider'
-        }
+        title={`Train speed: ${speedText}`}
       >
-        <span className="text-base sm:text-xl font-black font-mono leading-none text-slate-950 dark:text-cyan-300">
-          {speedVal !== null ? speedVal : '—'}
+        <span className="text-[10px] sm:text-xs text-emerald-400 leading-none">◯</span>
+        <span className="text-base sm:text-xl font-black font-mono leading-none tracking-tight text-white mt-0.5">
+          {speedKmH !== null ? speedKmH : '--'}
         </span>
-        <span className="text-[10px] sm:text-xs font-bold text-slate-500 dark:text-slate-400 mt-0.5">
+        <span className="text-[9px] sm:text-[10px] font-bold text-slate-300 leading-none mt-0.5">
           km/h
         </span>
-        {isEstimated && (
-          <span className="text-[8px] font-semibold text-amber-500 uppercase -mt-0.5">
-            est
-          </span>
-        )}
       </div>
     );
   };
@@ -418,8 +407,10 @@ export const RailwayTimeline: React.FC<Props> = ({
     }
   };
 
-  // Expanded intermediate segments: key = `${fromCode}_${toCode}`
-  const [expandedSegments, setExpandedSegments] = useState<Record<string, boolean>>({});
+  // 15. Single state: expandedSegmentId (only the selected segment should expand)
+  const [expandedSegmentId, setExpandedSegmentId] = useState<string | null>(null);
+  const lastTapRef = useRef<{ id: string; time: number } | null>(null);
+  const singleTapTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Direct section without intermediate stations popup state
   const [emptyModalInfo, setEmptyModalInfo] = useState<{
@@ -436,13 +427,13 @@ export const RailwayTimeline: React.FC<Props> = ({
         behavior: 'smooth',
         block: 'center',
       });
-    } else if (currentTrainRef.current && trainLocationEnabled) {
+    } else if (currentTrainRef.current && (trainLocationEnabled || insideTrain)) {
       currentTrainRef.current.scrollIntoView({
         behavior: 'smooth',
         block: 'center',
       });
     }
-  }, [selectedStationCode, currentIndex, trainLocationEnabled]);
+  }, [selectedStationCode, currentIndex, trainLocationEnabled, insideTrain]);
 
   // Find segment between two stops
   const getSegmentBetween = (fromCode: string, toCode: string): RouteSegment | undefined => {
@@ -460,7 +451,7 @@ export const RailwayTimeline: React.FC<Props> = ({
     );
   };
 
-  // Handle clicking track line / intermediate stations toggle
+  // 14 & 38. Single click/tap expands, double click/tap collapses
   const handleTrackConnectionClick = (
     fromCode: string,
     fromName: string,
@@ -468,20 +459,56 @@ export const RailwayTimeline: React.FC<Props> = ({
     toName: string
   ) => {
     const key = `${fromCode}_${toCode}`;
-    const segment = getSegmentBetween(fromCode, toCode);
+    const now = Date.now();
+    const last = lastTapRef.current;
 
-    if (!segment || segment.intermediateCount === 0 || segment.intermediateStations.length === 0) {
-      setEmptyModalInfo({ fromName, fromCode, toName, toCode });
-      if (onNoIntermediateStations) {
-        onNoIntermediateStations(fromName, fromCode, toName, toCode);
+    // Double tap / double click detection (within 350ms on same segment)
+    if (last && last.id === key && now - last.time < 350) {
+      if (singleTapTimeoutRef.current) {
+        clearTimeout(singleTapTimeoutRef.current);
+        singleTapTimeoutRef.current = null;
       }
+      lastTapRef.current = null;
+      // Double click collapses intermediate stations
+      setExpandedSegmentId(null);
       return;
     }
 
-    setExpandedSegments((prev) => ({
-      ...prev,
-      [key]: !prev[key],
-    }));
+    lastTapRef.current = { id: key, time: now };
+
+    if (singleTapTimeoutRef.current) {
+      clearTimeout(singleTapTimeoutRef.current);
+    }
+
+    singleTapTimeoutRef.current = setTimeout(() => {
+      // Single tap expands intermediate stations
+      const segment = getSegmentBetween(fromCode, toCode);
+
+      if (!segment || segment.intermediateCount === 0 || segment.intermediateStations.length === 0) {
+        setEmptyModalInfo({ fromName, fromCode, toName, toCode });
+        setExpandedSegmentId(key);
+        if (onNoIntermediateStations) {
+          onNoIntermediateStations(fromName, fromCode, toName, toCode);
+        }
+        return;
+      }
+
+      setExpandedSegmentId(key);
+    }, 220);
+  };
+
+  const handleTrackConnectionDoubleClick = (
+    _fromCode: string,
+    _fromName: string,
+    _toCode: string,
+    _toName: string
+  ) => {
+    if (singleTapTimeoutRef.current) {
+      clearTimeout(singleTapTimeoutRef.current);
+      singleTapTimeoutRef.current = null;
+    }
+    lastTapRef.current = null;
+    setExpandedSegmentId(null);
   };
 
   const nextDistance = Math.max(
@@ -884,28 +911,28 @@ export const RailwayTimeline: React.FC<Props> = ({
         </div>
       )}
 
-      {/* Train Location Sliding Toggle Bar (Section 9) */}
+      {/* 18. Inside Train Sliding Toggle Bar */}
       <div className="flex items-center justify-between gap-3 px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm">
         <div className="flex items-center gap-2.5">
           <div
             className={`p-1.5 rounded-lg transition-colors ${
-              trainLocationEnabled ? 'bg-blue-600 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-400'
+              insideTrain ? 'bg-blue-600 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-400'
             }`}
           >
-            <Radio className="w-4 h-4" />
+            <Train className="w-4 h-4" />
           </div>
           <div>
             <span className="text-xs font-black text-slate-900 dark:text-white tracking-wide">
-              Train Location
+              Inside Train
             </span>
             <span
               className={`ml-2 text-[10px] px-2 py-0.5 rounded-full font-bold uppercase ${
-                trainLocationEnabled
+                insideTrain
                   ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
                   : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
               }`}
             >
-              {trainLocationEnabled ? 'ON' : 'OFF'}
+              {insideTrain ? 'ON' : 'OFF'}
             </span>
           </div>
         </div>
@@ -914,20 +941,105 @@ export const RailwayTimeline: React.FC<Props> = ({
         <button
           type="button"
           role="switch"
-          aria-checked={trainLocationEnabled}
-          onClick={handleToggleLocation}
+          aria-checked={insideTrain}
+          onClick={onToggleInsideTrain}
           className={`relative inline-flex h-6 w-12 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none shadow-inner ${
-            trainLocationEnabled ? 'bg-blue-600' : 'bg-slate-300 dark:bg-slate-700'
+            insideTrain ? 'bg-blue-600' : 'bg-slate-300 dark:bg-slate-700'
           }`}
-          title={`Train Location is currently ${trainLocationEnabled ? 'ON' : 'OFF'}`}
+          title={`Inside Train mode is currently ${insideTrain ? 'ON' : 'OFF'}`}
         >
           <span
             className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-              trainLocationEnabled ? 'translate-x-6' : 'translate-x-0'
+              insideTrain ? 'translate-x-6' : 'translate-x-0'
             }`}
           />
         </button>
       </div>
+
+      {/* 59. INSIDE TRAIN HEADER (When ON) */}
+      {insideTrain && (
+        <div className="p-4 rounded-2xl bg-gradient-to-r from-blue-950 via-slate-900 to-indigo-950 border-2 border-blue-500/50 text-white shadow-xl animate-fade-in space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-sm font-black text-white">Inside Train</span>
+                <span className="flex items-center gap-1.5 text-xs font-extrabold text-emerald-400">
+                  <span className="relative flex h-2 w-2">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                  </span>
+                  ● Live
+                </span>
+              </div>
+              <p className="text-xs text-blue-200/80">
+                Live position tracking & telemetric speed monitoring active
+              </p>
+            </div>
+
+            {/* Small circular speed indicator */}
+            <div className="shrink-0">
+              {renderSpeedCircle('large')}
+            </div>
+          </div>
+
+          {/* 22. Location Permission Notice */}
+          {permissionDenied && (
+            <div className="flex items-center justify-between gap-2 p-3 rounded-xl bg-amber-950/80 border border-amber-500 text-amber-200 text-xs">
+              <div className="flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0 text-amber-400" />
+                <span>Location permission is required to calculate live speed.</span>
+              </div>
+              <button
+                type="button"
+                onClick={retryLocation}
+                className="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs shrink-0 transition active:scale-95"
+              >
+                Retry
+              </button>
+            </div>
+          )}
+
+          {/* Current & Next Station + Last updated */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-2.5 border-t border-slate-800/80 text-xs">
+            <div>
+              <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider block">
+                Current:
+              </span>
+              <p className="font-extrabold text-white truncate">
+                {status?.lastReportedStation?.name || currentStop?.stationName || 'Station'}{' '}
+                <span className="text-cyan-300">
+                  ({status?.lastReportedStation?.code || currentStop?.stationCode})
+                </span>
+              </p>
+            </div>
+            <div>
+              <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider block">
+                Next:
+              </span>
+              <p className="font-extrabold text-white truncate">
+                {status?.nextStation?.name || nextStop?.stationName || 'Destination'}{' '}
+                <span className="text-cyan-300">
+                  ({status?.nextStation?.code || nextStop?.stationCode})
+                </span>
+              </p>
+            </div>
+            <div className="sm:text-right">
+              <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider block">
+                Last updated:
+              </span>
+              <p className="font-mono text-slate-300">
+                {status?.updatedAt
+                  ? new Date(status.updatedAt).toLocaleTimeString('en-IN', {
+                      hour: '2-digit',
+                      minute: '2-digit',
+                      hour12: true,
+                    })
+                  : 'Just now'}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ============================================================== */}
       {/* 5. VERTICAL RAILWAY TIMELINE (Continuous Blue Track Route)     */}
@@ -983,7 +1095,7 @@ export const RailwayTimeline: React.FC<Props> = ({
             const segmentKey = nextStationStop
               ? `${stop.stationCode}_${nextStationStop.stationCode}`
               : '';
-            const isSegmentExpanded = !!expandedSegments[segmentKey];
+            const isSegmentExpanded = expandedSegmentId === segmentKey;
             const intermediateCount = segment?.intermediateCount || 0;
 
             // Effective platform (from user platform updates if edited).
@@ -1298,7 +1410,7 @@ export const RailwayTimeline: React.FC<Props> = ({
 
                     {/* Center Column: Continuous Blue Railway Line */}
                     <div className="flex-1 relative pl-1 sm:pl-2 py-2">
-                      {/* Continuous Blue Vertical Track Line (Clickable single click to inspect intermediate stations) */}
+                      {/* Continuous Blue Vertical Track Line (Clickable single click to inspect intermediate stations, double click to collapse) */}
                       <div
                         onClick={(e) => {
                           e.stopPropagation();
@@ -1309,8 +1421,17 @@ export const RailwayTimeline: React.FC<Props> = ({
                             nextStationStop.stationName
                           );
                         }}
+                        onDoubleClick={(e) => {
+                          e.stopPropagation();
+                          handleTrackConnectionDoubleClick(
+                            stop.stationCode,
+                            stop.stationName,
+                            nextStationStop.stationCode,
+                            nextStationStop.stationName
+                          );
+                        }}
                         className="absolute left-[10px] sm:left-[14px] top-0 bottom-0 w-4 sm:w-5 flex items-center justify-center cursor-pointer group/track z-10"
-                        title={`Click railway line between ${stop.stationName} and ${nextStationStop.stationName} to inspect intermediate stations`}
+                        title={`Click to inspect intermediate stations between ${stop.stationName} and ${nextStationStop.stationName} (Double click to collapse)`}
                       >
                         <div className="w-1 sm:w-1.5 h-full bg-blue-600 group-hover/track:bg-cyan-400 group-hover/track:w-2 transition-all shadow-sm rounded-full" />
                       </div>
@@ -1366,12 +1487,20 @@ export const RailwayTimeline: React.FC<Props> = ({
                               nextStationStop.stationName
                             )
                           }
+                          onDoubleClick={() =>
+                            handleTrackConnectionDoubleClick(
+                              stop.stationCode,
+                              stop.stationName,
+                              nextStationStop.stationCode,
+                              nextStationStop.stationName
+                            )
+                          }
                           className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-black border transition-all active:scale-95 shadow-2xs ${
                             isSegmentExpanded
                               ? 'bg-blue-600 text-white border-blue-600'
                               : 'bg-blue-50 dark:bg-blue-950/70 text-blue-700 dark:text-blue-300 border-blue-300 dark:border-blue-800 hover:bg-blue-100 hover:border-blue-500'
                           }`}
-                          title={`Click railway line to inspect intermediate stations between ${stop.stationName} and ${nextStationStop.stationName}`}
+                          title={`Click to inspect intermediate stations (Double click to collapse)`}
                         >
                           {intermediateCount > 0 ? (
                             isSegmentExpanded ? (
@@ -1391,8 +1520,30 @@ export const RailwayTimeline: React.FC<Props> = ({
                         </button>
                       </div>
 
+                      {/* 16. NO INTERMEDIATE STATIONS MESSAGE (When expanded on zero intermediate stations) */}
+                      {isSegmentExpanded && (!segment || !segment.intermediateStations || segment.intermediateStations.length === 0) && (
+                        <div className="relative z-10 ml-6 sm:ml-8 mt-2 p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 rounded-xl text-xs text-amber-900 dark:text-amber-200 animate-fade-in flex items-center justify-between gap-2 shadow-xs">
+                          <div className="flex items-center gap-2">
+                            <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
+                            <div>
+                              <p className="font-extrabold">No intermediate stations available</p>
+                              <p className="text-[11px] text-amber-700 dark:text-amber-300">
+                                Direct railway track section between {stop.stationName} and {nextStationStop.stationName}.
+                              </p>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setExpandedSegmentId(null)}
+                            className="text-xs text-amber-800 dark:text-amber-300 hover:underline font-bold shrink-0 p-1"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      )}
+
                       {/* EXPANDED INTERMEDIATE STATIONS INSIDE TIMELINE (Section 13, 14, 16) */}
-                      {isSegmentExpanded && segment && segment.intermediateStations.length > 0 && (
+                      {isSegmentExpanded && segment && segment.intermediateStations && segment.intermediateStations.length > 0 && (
                         <div className="relative z-10 ml-6 sm:ml-8 mt-2 space-y-2 border-l-2 border-dashed border-slate-300 dark:border-slate-700 pl-3 py-2 bg-slate-50/70 dark:bg-slate-950/50 rounded-r-2xl animate-fade-in">
                           <div className="flex items-center justify-between text-xs font-bold text-slate-600 dark:text-slate-300 pb-1 border-b border-slate-200 dark:border-slate-800">
                             <span>
@@ -1400,14 +1551,7 @@ export const RailwayTimeline: React.FC<Props> = ({
                             </span>
                             <button
                               type="button"
-                              onClick={() =>
-                                handleTrackConnectionClick(
-                                  stop.stationCode,
-                                  stop.stationName,
-                                  nextStationStop.stationCode,
-                                  nextStationStop.stationName
-                                )
-                              }
+                              onClick={() => setExpandedSegmentId(null)}
                               className="text-xs text-blue-600 dark:text-blue-400 hover:underline font-bold"
                             >
                               ▲ Hide intermediate stations

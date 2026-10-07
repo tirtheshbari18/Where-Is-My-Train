@@ -544,8 +544,20 @@ export class MockRailwayProvider implements IRailwayDataProvider {
         trainDestinationName: t.destinationName,
         selected_source: fromStop.stationName,
         selected_destination: toStop.stationName,
-        fromStation: { code: fromStop.stationCode, name: fromStop.stationName },
-        toStation: { code: toStop.stationCode, name: toStop.stationName },
+        fromStation: {
+          code: fromStop.stationCode,
+          name: fromStop.stationName,
+          departureTime: rawDep,
+          departureTime12H: formatTo12H(rawDep),
+          platform: fromStop.platform || undefined,
+        },
+        toStation: {
+          code: toStop.stationCode,
+          name: toStop.stationName,
+          arrivalTime: rawArr,
+          arrivalTime12H: formatTo12H(rawArr),
+          platform: toStop.platform || undefined,
+        },
         departureTime: formatTo12H(rawDep),
         arrivalTime: formatTo12H(rawArr),
         departure: formatTo12H(rawDep),
@@ -681,8 +693,76 @@ export class MockRailwayProvider implements IRailwayDataProvider {
         }];
       }
     }
-    const segments = MOCK_ROUTE_SEGMENTS[trainNumber] || [];
-    return segments;
+    const staticSegments = MOCK_ROUTE_SEGMENTS[trainNumber];
+    if (staticSegments && staticSegments.length > 0) {
+      return staticSegments;
+    }
+
+    const train = await this.getTrain(trainNumber);
+    if (!train || !train.schedule || train.schedule.length < 2) {
+      return [];
+    }
+
+    const stoppingStops = train.schedule.filter(
+      (s) =>
+        s.scheduledArrival === 'START' ||
+        s.scheduledDeparture === 'END' ||
+        (s.haltMinutes !== undefined && s.haltMinutes > 0) ||
+        (s as any).actionType !== 'PASS'
+    );
+    const scheduleToUse = stoppingStops.length >= 2 ? stoppingStops : train.schedule;
+
+    const dynamicSegments: RouteSegment[] = [];
+    for (let i = 0; i < scheduleToUse.length - 1; i++) {
+      const from = scheduleToUse[i];
+      const to = scheduleToUse[i + 1];
+      const fromIdx = train.schedule.findIndex(
+        (s) => s.stationCode.toUpperCase() === from.stationCode.toUpperCase()
+      );
+      const toIdx = train.schedule.findIndex(
+        (s) => s.stationCode.toUpperCase() === to.stationCode.toUpperCase()
+      );
+
+      const intermediateSlice =
+        fromIdx !== -1 && toIdx !== -1 && toIdx > fromIdx + 1
+          ? train.schedule.slice(fromIdx + 1, toIdx)
+          : [];
+
+      dynamicSegments.push({
+        fromStationCode: from.stationCode,
+        fromStationName: from.stationName,
+        toStationCode: to.stationCode,
+        toStationName: to.stationName,
+        distanceKm: Math.max(0, to.distanceFromSourceKm - from.distanceFromSourceKm),
+        intermediateCount: intermediateSlice.length,
+        intermediateStations: intermediateSlice.map((s, idx) => ({
+          stopSequence: s.stopSequence || idx + 1,
+          stationCode: s.stationCode,
+          stationName: s.stationName,
+          scheduledArrival: s.scheduledArrival,
+          scheduledDeparture: s.scheduledDeparture,
+          haltMinutes: s.haltMinutes,
+          distanceFromSourceKm: s.distanceFromSourceKm,
+          dayCount: s.dayCount,
+          platform: s.platform || undefined,
+          speedKmH: (s as any).speedKmH ?? undefined,
+          elevationMeters: (s as any).elevationMeters ?? undefined,
+          zone: (s as any).zone ?? undefined,
+          division: (s as any).division ?? undefined,
+          address: (s as any).address ?? undefined,
+          actionType: (s as any).actionType || (s.haltMinutes > 0 ? 'STOP' : 'PASS'),
+          stop_status:
+            (s as any).stop_status ||
+            ((s as any).actionType === 'PASS' || s.haltMinutes === 0
+              ? 'PASS_THROUGH'
+              : 'STOP'),
+          latitude: s.latitude,
+          longitude: s.longitude,
+        })),
+      });
+    }
+
+    return dynamicSegments;
   }
 
 

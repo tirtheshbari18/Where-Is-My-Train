@@ -138,3 +138,14 @@ export function normalizeDate(inputDate?: string): {
     isValid: false,
   };
 }
+
+export function isTrainRunningOnDate(
+  train: { runningDays?: string[]; exceptionDates?: string[] },
+  dateStr: string
+): boolean {
+  if (!train.runningDays || train.runningDays.length === 0) return true;
+  const normalized = normalizeDate(dateStr);
+  const day3 = normalized.dayOfWeek.toLowerCase().slice(0, 3);
+  return train.runningDays.some((d) => d.toLowerCase().startsWith(day3));
+}
+

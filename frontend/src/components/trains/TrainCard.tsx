@@ -382,7 +382,7 @@ export const TrainCard: React.FC<Props> = ({
           </button>
 
           <Link
-            to={`/train/${train.trainNumber}`}
+            to={`/train/${train.trainNumber}${highlightRoute?.date ? `?date=${highlightRoute.date}` : ''}`}
             className="flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold transition"
           >
             <Clock className="w-3.5 h-3.5 text-slate-500" />

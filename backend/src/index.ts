@@ -123,9 +123,12 @@ if (process.env.NODE_ENV !== 'test' && !isServerless) {
 }
 
 // Support both ESModule and CommonJS consumers
-if (typeof module !== 'undefined' && module.exports) {
-  module.exports = app;
-  module.exports.default = app;
+try {
+  if (typeof module !== 'undefined' && module.exports && Object.isExtensible(module.exports)) {
+    module.exports = app;
+  }
+} catch {
+  // Ignore in ESM environments
 }
 
 export default app;
