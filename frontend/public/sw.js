@@ -1,5 +1,5 @@
 // WHERE IS MY TRAIN - Service Worker for Offline PWA Support
-const CACHE_NAME = 'wimt-cache-v2';
+const CACHE_NAME = 'wimt-cache-v3';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
